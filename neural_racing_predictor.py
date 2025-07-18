@@ -245,11 +245,15 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
                 barrier_position = horse_details['barrier']
                 weight = horse_details['weight']
                 saddlecloth_number = horse_details['saddlecloth_number']
+                # Calculate same_venue based on actual track experience
+                same_venue = horse_details.get('track_starts', 0) > 0
             else:
                 # Fallback: Use barrier assignment based on sorted order
                 barrier_position = (i % 16) + 1  # Spread across 16 barriers
                 weight = 57.5 + (i * 0.1)  # Small weight increments
                 saddlecloth_number = i + 1  # Sequential numbering
+                # Fallback: Assume no venue experience
+                same_venue = False
             
             race_record = {
                 'horse_name': horse,
@@ -267,8 +271,8 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
                 'career_starts_to_date': float(profile['career_starts_to_date']) if pd.notna(profile['career_starts_to_date']) else 5.0,
                 'recent_form_3_races': float(profile['recent_form_3_races']) if pd.notna(profile['recent_form_3_races']) else 5.0,
                 
-                # Race context (all deterministic)
-                'same_venue': True,
+                # Race context (calculated from actual track experience)
+                'same_venue': same_venue,
                 'same_distance': True,
                 'same_track_condition': True,
                 'same_class': True,
@@ -297,11 +301,15 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
                 barrier_position = horse_details['barrier']
                 weight = horse_details['weight']
                 saddlecloth_number = horse_details['saddlecloth_number']
+                # Calculate same_venue based on actual track experience
+                same_venue = horse_details.get('track_starts', 0) > 0
             else:
                 # Fallback: Use barrier assignment based on sorted order
                 barrier_position = (i % 16) + 1  # Spread across 16 barriers
                 weight = 57.5 + (i * 0.1)  # Small weight increments
                 saddlecloth_number = i + 1  # Sequential numbering
+                # Fallback: Assume no venue experience
+                same_venue = False
             
             race_record = {
                 'horse_name': horse,
@@ -316,7 +324,7 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
                 'career_win_rate_to_date': 0.1,
                 'career_starts_to_date': 5.0,
                 'recent_form_3_races': 5.0,
-                'same_venue': True,
+                'same_venue': same_venue,
                 'same_distance': True,
                 'same_track_condition': True,
                 'same_class': True,
@@ -480,12 +488,19 @@ def main():
                     weight_str = str(entry.get('weight', '57.5'))
                     weight = float(weight_str.replace('kg', '').strip()) if weight_str else 57.5
                     
+                    # Extract trackStats to determine venue experience
+                    track_stats = entry.get('trackStats', {})
+                    track_starts = 0
+                    if track_stats and isinstance(track_stats, dict):
+                        track_starts = track_stats.get('starts', 0)
+                    
                     horse_race_details[horse_name] = {
                         'barrier': int(entry.get('barrierNumber', entry.get('barrier', 8))),  # Actual barrier
                         'weight': weight,  # Actual weight (parsed from "62kg" format)
                         'saddlecloth_number': int(entry.get('raceEntryNumber', 1)),  # Actual race entry number
                         'jockey': entry.get('jockeyName', 'Unknown'),
-                        'trainer': entry.get('trainerName', 'Unknown')
+                        'trainer': entry.get('trainerName', 'Unknown'),
+                        'track_starts': track_starts  # Number of previous starts at this venue
                     }
             
             logger.info(f"✅ Extracted race details: {race_info['distance']}m, {race_info['track_condition']} track")

@@ -261,6 +261,7 @@ class RacingComAPIClient:
                 timeSectional
                 comment
                 commentStewards
+                handicapRating
                 timing {
                     toEightHundredMetresSeconds
                     standardTimeTo800Difference

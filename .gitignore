@@ -46,3 +46,4 @@ Thumbs.db
 data/
 models/
 logs/
+neural_predictions/

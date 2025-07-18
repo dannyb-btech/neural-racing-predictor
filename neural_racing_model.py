@@ -207,6 +207,15 @@ class NeuralRacingModel:
             # Field size difficulty
             data['field_difficulty'] = (data['field_size'] - 8) / 8.0
         
+        # === HANDICAP RATING FEATURES ===
+        if 'handicap_rating' in data.columns:
+            data['handicap_rating'] = data['handicap_rating'].fillna(data['handicap_rating'].median())
+            # Create field-relative rating if we have multiple horses
+            if len(data) > 1:
+                data['handicap_rating_vs_field_avg'] = data['handicap_rating'] - data['handicap_rating'].mean()
+            else:
+                data['handicap_rating_vs_field_avg'] = 0.0
+        
         # === HORSE-SPECIFIC AGGREGATIONS ===
         # Calculate horse performance profiles
         horse_profiles = self._calculate_horse_profiles(data)
@@ -323,14 +332,14 @@ class NeuralRacingModel:
             'standard_time_diff_overall', 'standard_time_diff_800m',
             'standard_time_diff_400m', 'standard_time_diff_final',
             'career_win_rate_to_date', 'experience_factor',
-            'recent_form_score', 'recency_score'
+            'recent_form_score', 'recency_score', 'handicap_rating'
         ]
         
         # Race context features
         context_features = [
             'same_distance', 'same_venue', 'same_track_condition', 'same_class',
             'distance_change_penalty', 'barrier_disadvantage', 
-            'weight_burden', 'field_difficulty'
+            'weight_burden', 'field_difficulty', 'handicap_rating_vs_field_avg'
         ]
         
         # Horse profile features

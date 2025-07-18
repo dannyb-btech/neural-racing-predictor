@@ -56,6 +56,7 @@ class HistoricalRaceRecord:
     weight: float
     jockey: str
     trainer: str
+    handicap_rating: Optional[float]
     
     # Timing performance (key predictive features)
     standard_time_diff_overall: Optional[float]
@@ -323,6 +324,7 @@ class BayesianTrainingDataExtractor:
                 weight = self._safe_float(race.get('weightCarried'), 57.0)
                 jockey = race.get('jockeyName', 'Unknown')
                 trainer = race.get('trainerName', 'Unknown')
+                handicap_rating = self._safe_float(race.get('handicapRating'))
                 
                 # Extract timing data
                 timing_data = self._extract_timing_features(race)
@@ -368,6 +370,7 @@ class BayesianTrainingDataExtractor:
                     weight=weight,
                     jockey=jockey,
                     trainer=trainer,
+                    handicap_rating=handicap_rating,
                     
                     standard_time_diff_overall=timing_data['overall'],
                     standard_time_diff_800m=timing_data['800m'],
@@ -539,6 +542,7 @@ class BayesianTrainingDataExtractor:
                     'weight': record.weight,
                     'jockey': record.jockey,
                     'trainer': record.trainer,
+                    'handicap_rating': record.handicap_rating,
                     
                     'standard_time_diff_overall': record.standard_time_diff_overall,
                     'standard_time_diff_800m': record.standard_time_diff_800m,
