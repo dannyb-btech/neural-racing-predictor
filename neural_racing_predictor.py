@@ -208,6 +208,126 @@ def calculate_distance_penalty(profile: pd.Series, race_distance: int, training_
     except Exception:
         return 0.0
 
+def calculate_venue_performance(horse_name: str, target_venue: str, training_df: pd.DataFrame) -> dict:
+    """Calculate venue-specific performance metrics for a horse."""
+    
+    # Filter for this horse's races at the target venue
+    horse_races = training_df[training_df['horse_name'] == horse_name]
+    venue_races = horse_races[horse_races['venue'].str.lower().str.contains(target_venue.lower(), na=False)]
+    
+    if len(venue_races) == 0:
+        # No experience at this venue
+        return {
+            'venue_starts': 0,
+            'venue_win_rate': 0.0,
+            'venue_place_rate': 0.0,
+            'venue_avg_finish': 5.0,  # Default middle finish
+            'venue_experience': 0.0,
+            'venue_recent_form': 5.0
+        }
+    
+    # Calculate venue-specific metrics
+    venue_starts = len(venue_races)
+    venue_wins = venue_races['won'].sum()
+    venue_places = venue_races['placed'].sum()
+    venue_win_rate = venue_wins / venue_starts
+    venue_place_rate = venue_places / venue_starts
+    venue_avg_finish = venue_races['finish_position'].mean()
+    venue_experience = np.log1p(venue_starts)  # log(starts + 1) for diminishing returns
+    
+    # Recent form at venue (last 3 races or all if fewer)
+    recent_venue_races = venue_races.tail(3)
+    venue_recent_form = recent_venue_races['finish_position'].mean()
+    
+    return {
+        'venue_starts': venue_starts,
+        'venue_win_rate': venue_win_rate,
+        'venue_place_rate': venue_place_rate,
+        'venue_avg_finish': venue_avg_finish,
+        'venue_experience': venue_experience,
+        'venue_recent_form': venue_recent_form
+    }
+
+def calculate_distance_performance(horse_name: str, target_distance: int, training_df: pd.DataFrame) -> dict:
+    """Calculate distance-specific performance metrics for a horse."""
+    
+    # Filter for this horse's races at the target distance
+    horse_races = training_df[training_df['horse_name'] == horse_name]
+    distance_races = horse_races[horse_races['distance'] == target_distance]
+    
+    if len(distance_races) == 0:
+        # No experience at this distance
+        return {
+            'distance_starts': 0,
+            'distance_win_rate': 0.0,
+            'distance_place_rate': 0.0,
+            'distance_avg_finish': 5.0,
+            'distance_experience': 0.0,
+            'distance_recent_form': 5.0
+        }
+    
+    # Calculate distance-specific metrics
+    distance_starts = len(distance_races)
+    distance_wins = distance_races['won'].sum()
+    distance_places = distance_races['placed'].sum()
+    distance_win_rate = distance_wins / distance_starts
+    distance_place_rate = distance_places / distance_starts
+    distance_avg_finish = distance_races['finish_position'].mean()
+    distance_experience = np.log1p(distance_starts)
+    
+    # Recent form at distance (last 3 races or all if fewer)
+    recent_distance_races = distance_races.tail(3)
+    distance_recent_form = recent_distance_races['finish_position'].mean()
+    
+    return {
+        'distance_starts': distance_starts,
+        'distance_win_rate': distance_win_rate,
+        'distance_place_rate': distance_place_rate,
+        'distance_avg_finish': distance_avg_finish,
+        'distance_experience': distance_experience,
+        'distance_recent_form': distance_recent_form
+    }
+
+def calculate_track_condition_performance(horse_name: str, target_condition: str, training_df: pd.DataFrame) -> dict:
+    """Calculate track condition-specific performance metrics for a horse."""
+    
+    # Filter for this horse's races on the target track condition
+    horse_races = training_df[training_df['horse_name'] == horse_name]
+    condition_races = horse_races[horse_races['track_condition'].str.lower() == target_condition.lower()]
+    
+    if len(condition_races) == 0:
+        # No experience on this track condition
+        return {
+            'condition_starts': 0,
+            'condition_win_rate': 0.0,
+            'condition_place_rate': 0.0,
+            'condition_avg_finish': 5.0,
+            'condition_experience': 0.0,
+            'condition_recent_form': 5.0
+        }
+    
+    # Calculate track condition-specific metrics
+    condition_starts = len(condition_races)
+    condition_wins = condition_races['won'].sum()
+    condition_places = condition_races['placed'].sum()
+    condition_win_rate = condition_wins / condition_starts
+    condition_place_rate = condition_places / condition_starts
+    condition_avg_finish = condition_races['finish_position'].mean()
+    condition_experience = np.log1p(condition_starts)
+    
+    # Recent form on track condition (last 3 races or all if fewer)
+    recent_condition_races = condition_races.tail(3)
+    condition_recent_form = recent_condition_races['finish_position'].mean()
+    
+    return {
+        'condition_starts': condition_starts,
+        'condition_win_rate': condition_win_rate,
+        'condition_place_rate': condition_place_rate,
+        'condition_avg_finish': condition_avg_finish,
+        'condition_experience': condition_experience,
+        'condition_recent_form': condition_recent_form
+    }
+
 def create_upcoming_race_data(target_horses: list, race_info: dict, training_df: pd.DataFrame, horse_race_details: dict = None) -> pd.DataFrame:
     """Create upcoming race data with horse-specific historical features (fully deterministic)."""
     
@@ -239,21 +359,30 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
         if horse in horse_profiles.index:
             profile = horse_profiles.loc[horse]
             
+            # Calculate venue performance from historical data
+            target_venue = race_info.get('venue', 'Unknown')
+            venue_performance = calculate_venue_performance(horse, target_venue, training_df_sorted)
+            
+            # Calculate distance performance from historical data
+            distance_str = str(race_info.get('distance', 1400))
+            target_distance = int(distance_str.replace('m', '').replace('metres', '').strip())
+            distance_performance = calculate_distance_performance(horse, target_distance, training_df_sorted)
+            
+            # Calculate track condition performance from historical data
+            target_condition = race_info.get('track_condition', 'Good')
+            condition_performance = calculate_track_condition_performance(horse, target_condition, training_df_sorted)
+            
             # Use ACTUAL race details if available, otherwise fall back to reasonable defaults
             if horse_race_details and horse in horse_race_details:
                 horse_details = horse_race_details[horse]
                 barrier_position = horse_details['barrier']
                 weight = horse_details['weight']
                 saddlecloth_number = horse_details['saddlecloth_number']
-                # Calculate same_venue based on actual track experience
-                same_venue = horse_details.get('track_starts', 0) > 0
             else:
                 # Fallback: Use barrier assignment based on sorted order
                 barrier_position = (i % 16) + 1  # Spread across 16 barriers
                 weight = 57.5 + (i * 0.1)  # Small weight increments
                 saddlecloth_number = i + 1  # Sequential numbering
-                # Fallback: Assume no venue experience
-                same_venue = False
             
             race_record = {
                 'horse_name': horse,
@@ -271,10 +400,22 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
                 'career_starts_to_date': float(profile['career_starts_to_date']) if pd.notna(profile['career_starts_to_date']) else 5.0,
                 'recent_form_3_races': float(profile['recent_form_3_races']) if pd.notna(profile['recent_form_3_races']) else 5.0,
                 
-                # Race context (calculated from actual track experience)
-                'same_venue': same_venue,
-                'same_distance': True,
-                'same_track_condition': True,
+                # Race context (calculated from actual performance history)
+                'venue_win_rate': venue_performance['venue_win_rate'],
+                'venue_place_rate': venue_performance['venue_place_rate'],
+                'venue_avg_finish': venue_performance['venue_avg_finish'],
+                'venue_experience': venue_performance['venue_experience'],
+                'venue_recent_form': venue_performance['venue_recent_form'],
+                'distance_win_rate': distance_performance['distance_win_rate'],
+                'distance_place_rate': distance_performance['distance_place_rate'],
+                'distance_avg_finish': distance_performance['distance_avg_finish'],
+                'distance_experience': distance_performance['distance_experience'],
+                'distance_recent_form': distance_performance['distance_recent_form'],
+                'condition_win_rate': condition_performance['condition_win_rate'],
+                'condition_place_rate': condition_performance['condition_place_rate'],
+                'condition_avg_finish': condition_performance['condition_avg_finish'],
+                'condition_experience': condition_performance['condition_experience'],
+                'condition_recent_form': condition_performance['condition_recent_form'],
                 'same_class': True,
                 'days_to_target_race': 0,
                 'distance_difference': 0,
@@ -295,21 +436,28 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
             }
         else:
             # Default values for horses not in training data
+            # Calculate performance metrics (will return zeros for horses not in training data)
+            target_venue = race_info.get('venue', 'Unknown')
+            venue_performance = calculate_venue_performance(horse, target_venue, training_df_sorted)
+            
+            distance_str = str(race_info.get('distance', 1400))
+            target_distance = int(distance_str.replace('m', '').replace('metres', '').strip())
+            distance_performance = calculate_distance_performance(horse, target_distance, training_df_sorted)
+            
+            target_condition = race_info.get('track_condition', 'Good')
+            condition_performance = calculate_track_condition_performance(horse, target_condition, training_df_sorted)
+            
             # Use ACTUAL race details if available, otherwise fall back to defaults
             if horse_race_details and horse in horse_race_details:
                 horse_details = horse_race_details[horse]
                 barrier_position = horse_details['barrier']
                 weight = horse_details['weight']
                 saddlecloth_number = horse_details['saddlecloth_number']
-                # Calculate same_venue based on actual track experience
-                same_venue = horse_details.get('track_starts', 0) > 0
             else:
                 # Fallback: Use barrier assignment based on sorted order
                 barrier_position = (i % 16) + 1  # Spread across 16 barriers
                 weight = 57.5 + (i * 0.1)  # Small weight increments
                 saddlecloth_number = i + 1  # Sequential numbering
-                # Fallback: Assume no venue experience
-                same_venue = False
             
             race_record = {
                 'horse_name': horse,
@@ -324,9 +472,21 @@ def create_upcoming_race_data(target_horses: list, race_info: dict, training_df:
                 'career_win_rate_to_date': 0.1,
                 'career_starts_to_date': 5.0,
                 'recent_form_3_races': 5.0,
-                'same_venue': same_venue,
-                'same_distance': True,
-                'same_track_condition': True,
+                'venue_win_rate': venue_performance['venue_win_rate'],
+                'venue_place_rate': venue_performance['venue_place_rate'],
+                'venue_avg_finish': venue_performance['venue_avg_finish'],
+                'venue_experience': venue_performance['venue_experience'],
+                'venue_recent_form': venue_performance['venue_recent_form'],
+                'distance_win_rate': distance_performance['distance_win_rate'],
+                'distance_place_rate': distance_performance['distance_place_rate'],
+                'distance_avg_finish': distance_performance['distance_avg_finish'],
+                'distance_experience': distance_performance['distance_experience'],
+                'distance_recent_form': distance_performance['distance_recent_form'],
+                'condition_win_rate': condition_performance['condition_win_rate'],
+                'condition_place_rate': condition_performance['condition_place_rate'],
+                'condition_avg_finish': condition_performance['condition_avg_finish'],
+                'condition_experience': condition_performance['condition_experience'],
+                'condition_recent_form': condition_performance['condition_recent_form'],
                 'same_class': True,
                 'days_to_target_race': 0,
                 'distance_difference': 0,
@@ -488,19 +648,12 @@ def main():
                     weight_str = str(entry.get('weight', '57.5'))
                     weight = float(weight_str.replace('kg', '').strip()) if weight_str else 57.5
                     
-                    # Extract trackStats to determine venue experience
-                    track_stats = entry.get('trackStats', {})
-                    track_starts = 0
-                    if track_stats and isinstance(track_stats, dict):
-                        track_starts = track_stats.get('starts', 0)
-                    
                     horse_race_details[horse_name] = {
                         'barrier': int(entry.get('barrierNumber', entry.get('barrier', 8))),  # Actual barrier
                         'weight': weight,  # Actual weight (parsed from "62kg" format)
                         'saddlecloth_number': int(entry.get('raceEntryNumber', 1)),  # Actual race entry number
                         'jockey': entry.get('jockeyName', 'Unknown'),
-                        'trainer': entry.get('trainerName', 'Unknown'),
-                        'track_starts': track_starts  # Number of previous starts at this venue
+                        'trainer': entry.get('trainerName', 'Unknown')
                     }
             
             logger.info(f"✅ Extracted race details: {race_info['distance']}m, {race_info['track_condition']} track")

@@ -337,9 +337,26 @@ class NeuralRacingModel:
         
         # Race context features
         context_features = [
-            'same_distance', 'same_venue', 'same_track_condition', 'same_class',
-            'distance_change_penalty', 'barrier_disadvantage', 
+            'same_class', 'distance_change_penalty', 'barrier_disadvantage', 
             'weight_burden', 'field_difficulty', 'handicap_rating_vs_field_avg'
+        ]
+        
+        # Venue performance features (replacing simple same_venue boolean)
+        venue_features = [
+            'venue_win_rate', 'venue_place_rate', 'venue_avg_finish',
+            'venue_experience', 'venue_recent_form'
+        ]
+        
+        # Distance performance features (replacing simple same_distance boolean)
+        distance_features = [
+            'distance_win_rate', 'distance_place_rate', 'distance_avg_finish',
+            'distance_experience', 'distance_recent_form'
+        ]
+        
+        # Track condition performance features (replacing simple same_track_condition boolean)
+        condition_features = [
+            'condition_win_rate', 'condition_place_rate', 'condition_avg_finish',
+            'condition_experience', 'condition_recent_form'
         ]
         
         # Horse profile features
@@ -354,7 +371,7 @@ class NeuralRacingModel:
         
         # Combine all features that exist in the data
         selected_features = []
-        for feature_list in [core_features, context_features, profile_features, categorical_features]:
+        for feature_list in [core_features, context_features, venue_features, distance_features, condition_features, profile_features, categorical_features]:
             selected_features.extend([f for f in feature_list if f in data.columns])
         
         logger.info(f"Selected {len(selected_features)} features for training")
