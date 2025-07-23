@@ -359,6 +359,20 @@ class NeuralRacingModel:
             'condition_experience', 'condition_recent_form'
         ]
         
+        # Position and running style features (tactical patterns)
+        position_features = [
+            'position_at_settled', 'position_at_800m', 'position_at_400m',
+            'avg_position_settled', 'avg_position_800m', 'avg_position_400m',
+            'running_style_leader', 'running_style_on_pace', 'running_style_midfield', 
+            'running_style_back_marker', 'position_consistency', 'early_to_late_pattern'
+        ]
+        
+        # Margin quality features (performance competitiveness)
+        margin_features = [
+            'margin', 'avg_win_margin', 'avg_place_margin', 'avg_loss_margin',
+            'close_loss_rate', 'dominant_win_rate', 'competitive_race_rate', 'blowout_loss_rate'
+        ]
+        
         # Horse profile features
         profile_features = [
             'overall_win_rate', 'overall_place_rate', 'avg_finish_position',
@@ -371,7 +385,7 @@ class NeuralRacingModel:
         
         # Combine all features that exist in the data
         selected_features = []
-        for feature_list in [core_features, context_features, venue_features, distance_features, condition_features, profile_features, categorical_features]:
+        for feature_list in [core_features, context_features, venue_features, distance_features, condition_features, position_features, margin_features, profile_features, categorical_features]:
             selected_features.extend([f for f in feature_list if f in data.columns])
         
         logger.info(f"Selected {len(selected_features)} features for training")

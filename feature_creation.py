@@ -50,6 +50,7 @@ class HistoricalRaceRecord:
     finish_position: int
     won: bool  # 1st place
     placed: bool  # 1st, 2nd, or 3rd
+    margin: Optional[float]  # Winning/losing margin in lengths
     
     # Race context features
     barrier: int
@@ -67,6 +68,11 @@ class HistoricalRaceRecord:
     sectional_400m: Optional[float]
     final_sectional: Optional[float]
     finish_time: Optional[float]
+    
+    # Race position features (running style and tactics)
+    position_at_settled: Optional[int]
+    position_at_800m: Optional[int]
+    position_at_400m: Optional[int]
     
     # Derived features for modeling
     days_to_target_race: int
@@ -98,6 +104,26 @@ class HistoricalRaceRecord:
     condition_avg_finish: float
     condition_experience: float
     condition_recent_form: float
+    
+    # Running style features (tactical patterns)
+    avg_position_settled: float
+    avg_position_800m: float
+    avg_position_400m: float
+    running_style_leader: float
+    running_style_on_pace: float
+    running_style_midfield: float
+    running_style_back_marker: float
+    position_consistency: float
+    early_to_late_pattern: float
+    
+    # Margin quality features (performance competitiveness)
+    avg_win_margin: float
+    avg_place_margin: float
+    avg_loss_margin: float
+    close_loss_rate: float
+    dominant_win_rate: float
+    competitive_race_rate: float
+    blowout_loss_rate: float
 
 class BayesianTrainingDataExtractor:
     """Extract training data for Bayesian horse racing models with proper error handling"""
@@ -375,6 +401,12 @@ class BayesianTrainingDataExtractor:
                 # Extract timing data
                 timing_data = self._extract_timing_features(race)
                 
+                # Extract position data
+                position_data = self._extract_position_features(race)
+                
+                # Extract margin data
+                margin = self._extract_margin_data(race)
+                
                 # Calculate derived features
                 days_to_target = (target_race_date - race_date).days
                 distance_difference = target_distance - distance
@@ -391,6 +423,16 @@ class BayesianTrainingDataExtractor:
                 # Calculate performance context at time of this race (using only prior races)
                 performance_context = self._calculate_performance_context_at_race(
                     sorted_races, race_idx, race_date, target.venue, target_distance, target_track_condition
+                )
+                
+                # Calculate running style features at time of this race (using only prior races)
+                running_style_context = self._calculate_running_style_features(
+                    sorted_races, race_idx
+                )
+                
+                # Calculate margin quality features at time of this race (using only prior races)
+                margin_quality_context = self._calculate_margin_quality_features(
+                    sorted_races, race_idx
                 )
                 
                 # Create training record
@@ -416,6 +458,7 @@ class BayesianTrainingDataExtractor:
                     finish_position=finish_position,
                     won=won,
                     placed=placed,
+                    margin=margin,
                     
                     barrier=barrier,
                     weight=weight,
@@ -431,6 +474,10 @@ class BayesianTrainingDataExtractor:
                     sectional_400m=timing_data['sect_400m'],
                     final_sectional=timing_data['sect_final'],
                     finish_time=timing_data['finish_time'],
+                    
+                    position_at_settled=position_data['settled'],
+                    position_at_800m=position_data['800m'],
+                    position_at_400m=position_data['400m'],
                     
                     days_to_target_race=days_to_target,
                     distance_difference=distance_difference,
@@ -459,7 +506,27 @@ class BayesianTrainingDataExtractor:
                     condition_place_rate=performance_context['condition_place_rate'],
                     condition_avg_finish=performance_context['condition_avg_finish'],
                     condition_experience=performance_context['condition_experience'],
-                    condition_recent_form=performance_context['condition_recent_form']
+                    condition_recent_form=performance_context['condition_recent_form'],
+                    
+                    # Running style features
+                    avg_position_settled=running_style_context['avg_position_settled'],
+                    avg_position_800m=running_style_context['avg_position_800m'],
+                    avg_position_400m=running_style_context['avg_position_400m'],
+                    running_style_leader=running_style_context['running_style_leader'],
+                    running_style_on_pace=running_style_context['running_style_on_pace'],
+                    running_style_midfield=running_style_context['running_style_midfield'],
+                    running_style_back_marker=running_style_context['running_style_back_marker'],
+                    position_consistency=running_style_context['position_consistency'],
+                    early_to_late_pattern=running_style_context['early_to_late_pattern'],
+                    
+                    # Margin quality features
+                    avg_win_margin=margin_quality_context['avg_win_margin'],
+                    avg_place_margin=margin_quality_context['avg_place_margin'],
+                    avg_loss_margin=margin_quality_context['avg_loss_margin'],
+                    close_loss_rate=margin_quality_context['close_loss_rate'],
+                    dominant_win_rate=margin_quality_context['dominant_win_rate'],
+                    competitive_race_rate=margin_quality_context['competitive_race_rate'],
+                    blowout_loss_rate=margin_quality_context['blowout_loss_rate']
                 )
                 
                 records.append(record)
@@ -538,6 +605,280 @@ class BayesianTrainingDataExtractor:
             timing_data['finish_time'] = parse_time(timing_obj.get('finishTimeSeconds'))
         
         return timing_data
+    
+    def _extract_position_features(self, race: Dict) -> Dict[str, Optional[int]]:
+        """Extract position features from a race record."""
+        
+        def parse_position(value):
+            """Parse position values, handling various formats."""
+            if not value:
+                return None
+            try:
+                # Handle abbreviated positions like "1st", "2nd", etc.
+                if isinstance(value, str):
+                    # Remove common suffixes and extract number
+                    clean_value = value.replace('st', '').replace('nd', '').replace('rd', '').replace('th', '').strip()
+                    if clean_value:
+                        return int(clean_value)
+                return int(value)
+            except (ValueError, TypeError):
+                return None
+        
+        position_data = {
+            'settled': None,
+            '800m': None,
+            '400m': None
+        }
+        
+        # Check if race is None
+        if race is None:
+            return position_data
+        
+        # Extract position data from race record
+        position_data['settled'] = parse_position(race.get('positionAtSettledAbv'))
+        position_data['800m'] = parse_position(race.get('positionAt800Abv'))
+        position_data['400m'] = parse_position(race.get('positionAt400Abv'))
+        
+        return position_data
+    
+    def _extract_margin_data(self, race: Dict) -> Optional[float]:
+        """Extract margin data from a race record."""
+        
+        def parse_margin(value):
+            """Parse margin values, handling various formats."""
+            if not value:
+                return None
+            try:
+                # Handle string margins like "1.5L", "NOSE", "HEAD", "NECK", "SH HD" etc.
+                if isinstance(value, str):
+                    value_lower = value.lower().strip()
+                    
+                    # Handle special margin terms
+                    if value_lower in ['nose', 'ns']:
+                        return 0.05  # Very close
+                    elif value_lower in ['short head', 'sh hd', 'shd']:
+                        return 0.1   # Short head
+                    elif value_lower in ['head', 'hd']:
+                        return 0.15  # Head
+                    elif value_lower in ['neck', 'nk']:
+                        return 0.25  # Neck
+                    elif value_lower in ['long neck', 'lng nk']:
+                        return 0.35  # Long neck
+                    elif value_lower in ['half length', '1/2 l', '0.5l']:
+                        return 0.5   # Half length
+                    elif value_lower in ['three quarter length', '3/4 l', '0.75l']:
+                        return 0.75  # Three quarter length
+                    elif 'l' in value_lower:
+                        # Extract numeric part from strings like "1.5L", "2L", etc.
+                        numeric_part = value_lower.replace('l', '').replace('lengths', '').strip()
+                        if numeric_part:
+                            return float(numeric_part)
+                    else:
+                        # Try to parse as direct number
+                        return float(value)
+                else:
+                    return float(value)
+            except (ValueError, TypeError):
+                return None
+        
+        # Check if race is None
+        if race is None:
+            return None
+        
+        # Extract margin from race record
+        margin_value = race.get('margin')
+        return parse_margin(margin_value)
+    
+    def _calculate_margin_quality_features(self, sorted_races: List[Dict], current_race_idx: int) -> Dict:
+        """Calculate margin-based performance quality features from historical races."""
+        
+        # Get prior races (only races that happened before this one)
+        prior_races = []
+        for i in range(current_race_idx + 1, len(sorted_races)):
+            prior_race = sorted_races[i]
+            if prior_race is not None:
+                prior_races.append(prior_race)
+        
+        if len(prior_races) == 0:
+            # No historical data - return neutral quality metrics
+            return {
+                'avg_win_margin': 0.0,          # Average margin when winning
+                'avg_place_margin': 0.0,        # Average margin when placing  
+                'avg_loss_margin': 3.0,         # Average margin when losing
+                'close_loss_rate': 0.0,         # Rate of losses < 1 length
+                'dominant_win_rate': 0.0,       # Rate of wins > 2 lengths
+                'competitive_race_rate': 0.0,   # Rate of races decided < 2 lengths
+                'blowout_loss_rate': 0.0        # Rate of losses > 5 lengths
+            }
+        
+        # Extract margin data and outcomes from prior races
+        win_margins = []
+        place_margins = []
+        loss_margins = []
+        all_margins = []
+        
+        close_losses = 0  # Losses < 1 length
+        dominant_wins = 0  # Wins > 2 lengths  
+        competitive_races = 0  # All races decided < 2 lengths
+        blowout_losses = 0  # Losses > 5 lengths
+        
+        for race in prior_races:
+            try:
+                finish_pos = self._parse_finish_position(race.get('finish'))
+                margin = self._extract_margin_data(race)
+                
+                if finish_pos is not None and margin is not None:
+                    all_margins.append(margin)
+                    
+                    if finish_pos == 1:  # Won
+                        win_margins.append(margin)
+                        if margin > 2.0:
+                            dominant_wins += 1
+                    elif finish_pos <= 3:  # Placed but didn't win
+                        place_margins.append(margin)
+                    else:  # Lost
+                        loss_margins.append(margin)
+                        if margin < 1.0:
+                            close_losses += 1
+                        if margin > 5.0:
+                            blowout_losses += 1
+                    
+                    # Track competitive races
+                    if margin < 2.0:
+                        competitive_races += 1
+                        
+            except Exception as e:
+                continue
+        
+        total_races_with_margins = len(all_margins)
+        total_wins = len(win_margins)
+        total_losses = len(loss_margins)
+        
+        if total_races_with_margins == 0:
+            return {
+                'avg_win_margin': 0.0,
+                'avg_place_margin': 0.0, 
+                'avg_loss_margin': 3.0,
+                'close_loss_rate': 0.0,
+                'dominant_win_rate': 0.0,
+                'competitive_race_rate': 0.0,
+                'blowout_loss_rate': 0.0
+            }
+        
+        # Calculate averages
+        avg_win_margin = np.mean(win_margins) if win_margins else 0.0
+        avg_place_margin = np.mean(place_margins) if place_margins else 0.0
+        avg_loss_margin = np.mean(loss_margins) if loss_margins else 3.0
+        
+        # Calculate rates
+        close_loss_rate = close_losses / total_losses if total_losses > 0 else 0.0
+        dominant_win_rate = dominant_wins / total_wins if total_wins > 0 else 0.0
+        competitive_race_rate = competitive_races / total_races_with_margins
+        blowout_loss_rate = blowout_losses / total_losses if total_losses > 0 else 0.0
+        
+        return {
+            'avg_win_margin': avg_win_margin,
+            'avg_place_margin': avg_place_margin,
+            'avg_loss_margin': avg_loss_margin,
+            'close_loss_rate': close_loss_rate,
+            'dominant_win_rate': dominant_win_rate,
+            'competitive_race_rate': competitive_race_rate,
+            'blowout_loss_rate': blowout_loss_rate
+        }
+    
+    def _calculate_running_style_features(self, sorted_races: List[Dict], current_race_idx: int) -> Dict:
+        """Calculate running style classification based on historical position patterns."""
+        
+        # Get prior races (only races that happened before this one)
+        prior_races = []
+        for i in range(current_race_idx + 1, len(sorted_races)):
+            prior_race = sorted_races[i]
+            if prior_race is not None:
+                prior_races.append(prior_race)
+        
+        if len(prior_races) == 0:
+            # No historical data - return neutral running style
+            return {
+                'avg_position_settled': 5.0,
+                'avg_position_800m': 5.0,
+                'avg_position_400m': 5.0,
+                'running_style_leader': 0.0,        # Position 1-2 early
+                'running_style_on_pace': 0.0,       # Position 3-5 early  
+                'running_style_midfield': 0.0,      # Position 6-8 early
+                'running_style_back_marker': 0.0,   # Position 9+ early
+                'position_consistency': 1.0,        # Standard deviation of positions
+                'early_to_late_pattern': 0.0        # Difference between early and late positions
+            }
+        
+        # Extract position data from prior races
+        settled_positions = []
+        pos_800m_positions = []
+        pos_400m_positions = []
+        
+        for race in prior_races:
+            position_data = self._extract_position_features(race)
+            
+            if position_data['settled'] is not None:
+                settled_positions.append(position_data['settled'])
+            if position_data['800m'] is not None:
+                pos_800m_positions.append(position_data['800m'])
+            if position_data['400m'] is not None:
+                pos_400m_positions.append(position_data['400m'])
+        
+        # Calculate average positions
+        avg_settled = np.mean(settled_positions) if settled_positions else 5.0
+        avg_800m = np.mean(pos_800m_positions) if pos_800m_positions else 5.0
+        avg_400m = np.mean(pos_400m_positions) if pos_400m_positions else 5.0
+        
+        # Classify running style based on settled position (most indicative of tactics)
+        style_counts = {'leader': 0, 'on_pace': 0, 'midfield': 0, 'back_marker': 0}
+        
+        for pos in settled_positions:
+            if pos <= 2:
+                style_counts['leader'] += 1
+            elif pos <= 5:
+                style_counts['on_pace'] += 1
+            elif pos <= 8:
+                style_counts['midfield'] += 1
+            else:
+                style_counts['back_marker'] += 1
+        
+        total_races = len(settled_positions) if settled_positions else 1
+        
+        # Calculate running style probabilities
+        leader_rate = style_counts['leader'] / total_races
+        on_pace_rate = style_counts['on_pace'] / total_races
+        midfield_rate = style_counts['midfield'] / total_races
+        back_marker_rate = style_counts['back_marker'] / total_races
+        
+        # Position consistency (lower = more consistent)
+        position_consistency = np.std(settled_positions) if len(settled_positions) > 1 else 1.0
+        
+        # Early to late pattern (positive = improves position, negative = fades)
+        early_to_late = 0.0
+        if settled_positions and pos_400m_positions:
+            # Calculate average improvement from settled to 400m
+            paired_positions = []
+            for i, race in enumerate(prior_races):
+                position_data = self._extract_position_features(race)
+                if position_data['settled'] is not None and position_data['400m'] is not None:
+                    # Positive value means improved position (lower number = better position)
+                    improvement = position_data['settled'] - position_data['400m']
+                    paired_positions.append(improvement)
+            
+            early_to_late = np.mean(paired_positions) if paired_positions else 0.0
+        
+        return {
+            'avg_position_settled': avg_settled,
+            'avg_position_800m': avg_800m,
+            'avg_position_400m': avg_400m,
+            'running_style_leader': leader_rate,
+            'running_style_on_pace': on_pace_rate,
+            'running_style_midfield': midfield_rate,
+            'running_style_back_marker': back_marker_rate,
+            'position_consistency': position_consistency,
+            'early_to_late_pattern': early_to_late
+        }
     
     def _calculate_career_context_at_race(self, sorted_races: List[Dict], current_race_idx: int, 
                                         current_race_date: datetime) -> Dict:
@@ -722,6 +1063,7 @@ class BayesianTrainingDataExtractor:
                     'finish_position': record.finish_position,
                     'won': record.won,
                     'placed': record.placed,
+                    'margin': record.margin,
                     
                     'barrier': record.barrier,
                     'weight': record.weight,
@@ -737,6 +1079,10 @@ class BayesianTrainingDataExtractor:
                     'sectional_400m': record.sectional_400m,
                     'final_sectional': record.final_sectional,
                     'finish_time': record.finish_time,
+                    
+                    'position_at_settled': record.position_at_settled,
+                    'position_at_800m': record.position_at_800m,
+                    'position_at_400m': record.position_at_400m,
                     
                     'days_to_target_race': record.days_to_target_race,
                     'distance_difference': record.distance_difference,
@@ -765,7 +1111,27 @@ class BayesianTrainingDataExtractor:
                     'condition_place_rate': record.condition_place_rate,
                     'condition_avg_finish': record.condition_avg_finish,
                     'condition_experience': record.condition_experience,
-                    'condition_recent_form': record.condition_recent_form
+                    'condition_recent_form': record.condition_recent_form,
+                    
+                    # Running style features
+                    'avg_position_settled': record.avg_position_settled,
+                    'avg_position_800m': record.avg_position_800m,
+                    'avg_position_400m': record.avg_position_400m,
+                    'running_style_leader': record.running_style_leader,
+                    'running_style_on_pace': record.running_style_on_pace,
+                    'running_style_midfield': record.running_style_midfield,
+                    'running_style_back_marker': record.running_style_back_marker,
+                    'position_consistency': record.position_consistency,
+                    'early_to_late_pattern': record.early_to_late_pattern,
+                    
+                    # Margin quality features
+                    'avg_win_margin': record.avg_win_margin,
+                    'avg_place_margin': record.avg_place_margin,
+                    'avg_loss_margin': record.avg_loss_margin,
+                    'close_loss_rate': record.close_loss_rate,
+                    'dominant_win_rate': record.dominant_win_rate,
+                    'competitive_race_rate': record.competitive_race_rate,
+                    'blowout_loss_rate': record.blowout_loss_rate
                 }
                 data.append(record_dict)
             
