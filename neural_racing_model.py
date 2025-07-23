@@ -402,8 +402,8 @@ class NeuralRacingModel:
         # Prepare features
         data = self.prepare_features(df)
         
-        if len(data) < 50:
-            raise ValueError(f"Insufficient data: {len(data)} records. Need at least 50.")
+        if len(data) < 20:
+            raise ValueError(f"Insufficient data: {len(data)} records. Need at least 20.")
         
         # Select features
         self.feature_names = self.select_features(data)

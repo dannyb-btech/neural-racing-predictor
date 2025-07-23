@@ -81,6 +81,23 @@ class HistoricalRaceRecord:
     career_wins_to_date: int
     career_win_rate_to_date: float
     recent_form_3_races: Optional[float]
+    
+    # Performance context at time of this race (venue/distance/condition specific)
+    venue_win_rate: float
+    venue_place_rate: float
+    venue_avg_finish: float
+    venue_experience: float
+    venue_recent_form: float
+    distance_win_rate: float
+    distance_place_rate: float
+    distance_avg_finish: float
+    distance_experience: float
+    distance_recent_form: float
+    condition_win_rate: float
+    condition_place_rate: float
+    condition_avg_finish: float
+    condition_experience: float
+    condition_recent_form: float
 
 class BayesianTrainingDataExtractor:
     """Extract training data for Bayesian horse racing models with proper error handling"""
@@ -227,7 +244,12 @@ class BayesianTrainingDataExtractor:
                     
                     real_races = []
                     for race in historical_races:
+                        if race is None:
+                            continue
                         race_info = race.get('race', {})
+                        if race_info is None:
+                            # Skip races with no race info rather than create synthetic data
+                            continue
                         if not race_info.get('isTrial', False) and not race_info.get('isJumpOut', False):
                             real_races.append(race)
                     
@@ -241,10 +263,23 @@ class BayesianTrainingDataExtractor:
                     logger.info(f"✅ {horse_name}: Added {len(horse_records)} historical race records")
                     
                 except Exception as e:
+                    import traceback
                     logger.error(f"❌ Failed to process {horse_name}: {e}")
+                    logger.error(f"Full traceback: {traceback.format_exc()}")
                     continue
             
             logger.info(f"🏁 Extracted {len(all_training_records)} total training records from {len(horses)} horses")
+            
+            # Debug info about training data distribution
+            if all_training_records:
+                horse_counts = {}
+                for record in all_training_records:
+                    horse_name = record.horse_name
+                    if horse_name not in horse_counts:
+                        horse_counts[horse_name] = 0
+                    horse_counts[horse_name] += 1
+                
+                logger.info(f"Training records per horse: {dict(sorted(horse_counts.items(), key=lambda x: x[1], reverse=True))}")
             
             return all_training_records
             
@@ -266,6 +301,8 @@ class BayesianTrainingDataExtractor:
         def safe_sort_key(race_item):
             """Safe sorting key that handles None dates"""
             try:
+                if race_item is None:
+                    return '1900-01-01'
                 race_info = race_item.get('race', {})
                 date_str = race_info.get('date', '')
                 if not date_str:
@@ -278,7 +315,11 @@ class BayesianTrainingDataExtractor:
         
         for race_idx, race in enumerate(sorted_races):
             try:
+                if race is None:
+                    continue
                 race_info = race.get('race', {})
+                if race_info is None:
+                    continue
                 
                 # Parse race date with proper None handling and debugging
                 race_date_str = race_info.get('date')
@@ -307,7 +348,12 @@ class BayesianTrainingDataExtractor:
                 
                 # Extract basic race details with safe conversions
                 venue_info = race_info.get('venue', {})
-                venue = venue_info.get('venueName', 'Unknown') if isinstance(venue_info, dict) else str(venue_info)
+                if venue_info is None:
+                    venue = 'Unknown'
+                elif isinstance(venue_info, dict):
+                    venue = venue_info.get('venueName', 'Unknown')
+                else:
+                    venue = str(venue_info)
                 
                 distance = self._safe_int(race_info.get('distance'), 1200)
                 track_condition = race_info.get('trackCondition', 'Good')
@@ -332,14 +378,19 @@ class BayesianTrainingDataExtractor:
                 # Calculate derived features
                 days_to_target = (target_race_date - race_date).days
                 distance_difference = target_distance - distance
-                same_venue = (target.venue.lower() in venue.lower())
+                same_venue = (target.venue and venue and target.venue.lower() in venue.lower()) if target.venue and venue else False
                 same_track_condition = (target_track_condition == track_condition)
                 same_distance = (target_distance == distance)
-                same_class = (target_class.lower() in race_class.lower()) if target_class and race_class else False
+                same_class = (target_class and race_class and target_class.lower() in race_class.lower()) if target_class and race_class else False
                 
                 # Calculate career context at time of this race
                 career_context = self._calculate_career_context_at_race(
                     sorted_races, race_idx, race_date
+                )
+                
+                # Calculate performance context at time of this race (using only prior races)
+                performance_context = self._calculate_performance_context_at_race(
+                    sorted_races, race_idx, race_date, target.venue, target_distance, target_track_condition
                 )
                 
                 # Create training record
@@ -391,7 +442,24 @@ class BayesianTrainingDataExtractor:
                     career_starts_to_date=career_context['starts'],
                     career_wins_to_date=career_context['wins'],
                     career_win_rate_to_date=career_context['win_rate'],
-                    recent_form_3_races=career_context['recent_form']
+                    recent_form_3_races=career_context['recent_form'],
+                    
+                    # Performance context features
+                    venue_win_rate=performance_context['venue_win_rate'],
+                    venue_place_rate=performance_context['venue_place_rate'],
+                    venue_avg_finish=performance_context['venue_avg_finish'],
+                    venue_experience=performance_context['venue_experience'],
+                    venue_recent_form=performance_context['venue_recent_form'],
+                    distance_win_rate=performance_context['distance_win_rate'],
+                    distance_place_rate=performance_context['distance_place_rate'],
+                    distance_avg_finish=performance_context['distance_avg_finish'],
+                    distance_experience=performance_context['distance_experience'],
+                    distance_recent_form=performance_context['distance_recent_form'],
+                    condition_win_rate=performance_context['condition_win_rate'],
+                    condition_place_rate=performance_context['condition_place_rate'],
+                    condition_avg_finish=performance_context['condition_avg_finish'],
+                    condition_experience=performance_context['condition_experience'],
+                    condition_recent_form=performance_context['condition_recent_form']
                 )
                 
                 records.append(record)
@@ -449,6 +517,10 @@ class BayesianTrainingDataExtractor:
             'finish_time': None
         }
         
+        # Check if race is None
+        if race is None:
+            return timing_data
+        
         # Extract from main race record
         if race.get('standardTimeDifference'):
             timing_data['overall'] = parse_length_diff(race.get('standardTimeDifference'))
@@ -475,7 +547,12 @@ class BayesianTrainingDataExtractor:
         for i in range(current_race_idx + 1, len(sorted_races)):
             try:
                 prior_race = sorted_races[i]
-                prior_race_date_str = prior_race.get('race', {}).get('date')
+                if prior_race is None:
+                    continue
+                prior_race_info = prior_race.get('race', {})
+                if prior_race_info is None:
+                    continue
+                prior_race_date_str = prior_race_info.get('date')
                 if prior_race_date_str:
                     prior_race_date = self._safe_date_parse(prior_race_date_str)
                     if prior_race_date and current_race_date and prior_race_date < current_race_date:
@@ -490,6 +567,8 @@ class BayesianTrainingDataExtractor:
         
         for i, race in enumerate(prior_races):
             try:
+                if race is None:
+                    continue
                 finish_pos = self._parse_finish_position(race.get('finish'))
                 if finish_pos:
                     if finish_pos == 1:
@@ -508,6 +587,112 @@ class BayesianTrainingDataExtractor:
             'wins': wins,
             'win_rate': win_rate,
             'recent_form': recent_form
+        }
+    
+    def _calculate_performance_context_at_race(self, sorted_races: List[Dict], current_race_idx: int,
+                                             current_race_date: datetime, target_venue: str, 
+                                             target_distance: int, target_condition: str) -> Dict:
+        """Calculate venue/distance/condition performance at the time of this historical race."""
+        
+        # Get prior races (races that happened before this historical race)
+        prior_races = []
+        for i in range(current_race_idx + 1, len(sorted_races)):
+            try:
+                prior_race = sorted_races[i]
+                if prior_race is None:
+                    continue
+                prior_race_info = prior_race.get('race', {})
+                if prior_race_info is None:
+                    continue
+                prior_race_date_str = prior_race_info.get('date')
+                if prior_race_date_str:
+                    prior_race_date = self._safe_date_parse(prior_race_date_str)
+                    if prior_race_date and current_race_date and prior_race_date < current_race_date:
+                        prior_races.append(prior_race)
+            except Exception as e:
+                logger.warning(f"Error processing prior race for performance context: {e}")
+                continue
+        
+        # Calculate venue performance from prior races
+        venue_races = []
+        for race in prior_races:
+            try:
+                race_info = race.get('race', {})
+                if race_info:
+                    venue_info = race_info.get('venue', {})
+                    venue = venue_info.get('venueName', 'Unknown') if isinstance(venue_info, dict) else str(venue_info)
+                    if venue and target_venue and target_venue.lower() in venue.lower():
+                        venue_races.append(race)
+            except:
+                continue
+        
+        venue_starts = len(venue_races)
+        venue_wins = sum(1 for race in venue_races if self._parse_finish_position(race.get('finish')) == 1)
+        venue_places = sum(1 for race in venue_races if self._parse_finish_position(race.get('finish')) and self._parse_finish_position(race.get('finish')) <= 3)
+        
+        # Calculate distance performance from prior races  
+        distance_races = []
+        for race in prior_races:
+            try:
+                race_info = race.get('race', {})
+                if race_info:
+                    distance = self._safe_int(race_info.get('distance'), 1200)
+                    if distance == target_distance:
+                        distance_races.append(race)
+            except:
+                continue
+        
+        distance_starts = len(distance_races)
+        distance_wins = sum(1 for race in distance_races if self._parse_finish_position(race.get('finish')) == 1)
+        distance_places = sum(1 for race in distance_races if self._parse_finish_position(race.get('finish')) and self._parse_finish_position(race.get('finish')) <= 3)
+        
+        # Calculate condition performance from prior races
+        condition_races = []
+        for race in prior_races:
+            try:
+                race_info = race.get('race', {})
+                if race_info:
+                    condition = race_info.get('trackCondition', 'Good')
+                    if condition == target_condition:
+                        condition_races.append(race)
+            except:
+                continue
+        
+        condition_starts = len(condition_races)
+        condition_wins = sum(1 for race in condition_races if self._parse_finish_position(race.get('finish')) == 1)
+        condition_places = sum(1 for race in condition_races if self._parse_finish_position(race.get('finish')) and self._parse_finish_position(race.get('finish')) <= 3)
+        
+        # Calculate average finishes
+        venue_finishes = [self._parse_finish_position(race.get('finish')) for race in venue_races]
+        venue_finishes = [f for f in venue_finishes if f is not None]
+        
+        distance_finishes = [self._parse_finish_position(race.get('finish')) for race in distance_races]
+        distance_finishes = [f for f in distance_finishes if f is not None]
+        
+        condition_finishes = [self._parse_finish_position(race.get('finish')) for race in condition_races]
+        condition_finishes = [f for f in condition_finishes if f is not None]
+        
+        return {
+            # Venue performance
+            'venue_win_rate': venue_wins / venue_starts if venue_starts > 0 else 0.0,
+            'venue_place_rate': venue_places / venue_starts if venue_starts > 0 else 0.0,
+            'venue_avg_finish': np.mean(venue_finishes) if venue_finishes else 5.0,
+            'venue_experience': np.log1p(venue_starts),
+            'venue_recent_form': np.mean(venue_finishes[-3:]) if len(venue_finishes) >= 1 else 5.0,
+            
+            # Distance performance
+            'distance_win_rate': distance_wins / distance_starts if distance_starts > 0 else 0.0,
+            'distance_place_rate': distance_places / distance_starts if distance_starts > 0 else 0.0,
+            'distance_avg_finish': np.mean(distance_finishes) if distance_finishes else 5.0,
+            'distance_experience': np.log1p(distance_starts),
+            'distance_recent_form': np.mean(distance_finishes[-3:]) if len(distance_finishes) >= 1 else 5.0,
+            
+            # Condition performance
+            'condition_win_rate': condition_wins / condition_starts if condition_starts > 0 else 0.0,
+            'condition_place_rate': condition_places / condition_starts if condition_starts > 0 else 0.0,
+            'condition_avg_finish': np.mean(condition_finishes) if condition_finishes else 5.0,
+            'condition_experience': np.log1p(condition_starts),
+            'condition_recent_form': np.mean(condition_finishes[-3:]) if len(condition_finishes) >= 1 else 5.0
         }
     
     def records_to_dataframe(self, records: List[HistoricalRaceRecord]) -> pd.DataFrame:
@@ -563,7 +748,24 @@ class BayesianTrainingDataExtractor:
                     'career_starts_to_date': record.career_starts_to_date,
                     'career_wins_to_date': record.career_wins_to_date,
                     'career_win_rate_to_date': record.career_win_rate_to_date,
-                    'recent_form_3_races': record.recent_form_3_races
+                    'recent_form_3_races': record.recent_form_3_races,
+                    
+                    # Performance context features
+                    'venue_win_rate': record.venue_win_rate,
+                    'venue_place_rate': record.venue_place_rate,
+                    'venue_avg_finish': record.venue_avg_finish,
+                    'venue_experience': record.venue_experience,
+                    'venue_recent_form': record.venue_recent_form,
+                    'distance_win_rate': record.distance_win_rate,
+                    'distance_place_rate': record.distance_place_rate,
+                    'distance_avg_finish': record.distance_avg_finish,
+                    'distance_experience': record.distance_experience,
+                    'distance_recent_form': record.distance_recent_form,
+                    'condition_win_rate': record.condition_win_rate,
+                    'condition_place_rate': record.condition_place_rate,
+                    'condition_avg_finish': record.condition_avg_finish,
+                    'condition_experience': record.condition_experience,
+                    'condition_recent_form': record.condition_recent_form
                 }
                 data.append(record_dict)
             
