@@ -124,6 +124,13 @@ class HistoricalRaceRecord:
     dominant_win_rate: float
     competitive_race_rate: float
     blowout_loss_rate: float
+    
+    # Weight competitiveness features (relative field positioning)
+    weight_relative_to_field: float     # (weight - field_avg) / field_std
+    weight_percentile_in_race: float    # percentile rank within race field (0-1)
+    weight_advantage: float             # (min_field_weight - weight) / field_range
+    weight_per_rating: float            # weight / handicap_rating (efficiency metric)
+    top_weight_burden: float            # distance from highest weight in field
 
 class BayesianTrainingDataExtractor:
     """Extract training data for Bayesian horse racing models with proper error handling"""
@@ -252,7 +259,7 @@ class BayesianTrainingDataExtractor:
             race_data = horses[0]['race_data']
             target_distance = self._safe_int(race_data.get('distance'), 1200)
             target_track_condition = race_data.get('trackCondition', 'Good')
-            target_class = race_data.get('class', '')
+            target_class = race_data.get('class') or race_data.get('rdcClass') or race_data.get('group') or ''
             
             logger.info(f"Target race: {target_distance}m, {target_track_condition} track, {target_class}")
             
@@ -281,7 +288,7 @@ class BayesianTrainingDataExtractor:
                     
                     horse_records = self._convert_horse_history_to_records(
                         horse_info, real_races, target, target_race_date,
-                        target_distance, target_track_condition, target_class
+                        target_distance, target_track_condition, target_class, horses
                     )
                     
                     all_training_records.extend(horse_records)
@@ -316,7 +323,7 @@ class BayesianTrainingDataExtractor:
     def _convert_horse_history_to_records(self, horse_info: Dict, historical_races: List[Dict], 
                                         target: RaceTarget, target_race_date: datetime,
                                         target_distance: int, target_track_condition: str, 
-                                        target_class: str) -> List[HistoricalRaceRecord]:
+                                        target_class: str, target_race_horses: List[Dict]) -> List[HistoricalRaceRecord]:
         """Convert a horse's historical races into training records with proper error handling."""
         
         records = []
@@ -384,7 +391,7 @@ class BayesianTrainingDataExtractor:
                 distance = self._safe_int(race_info.get('distance'), 1200)
                 track_condition = race_info.get('trackCondition', 'Good')
                 track_rating = self._safe_float(race_info.get('trackRating'))
-                race_class = race_info.get('class', '')
+                race_class = race_info.get('class') or race_info.get('group') or ''
                 field_size = self._safe_int(race_info.get('runnersCount'), 8)
                 
                 # Performance outcomes
@@ -433,6 +440,11 @@ class BayesianTrainingDataExtractor:
                 # Calculate margin quality features at time of this race (using only prior races)
                 margin_quality_context = self._calculate_margin_quality_features(
                     sorted_races, race_idx
+                )
+                
+                # Calculate weight competitiveness features relative to target race field
+                weight_competitiveness_context = self._calculate_weight_competitiveness_features(
+                    target_race_horses, weight, handicap_rating
                 )
                 
                 # Create training record
@@ -526,7 +538,14 @@ class BayesianTrainingDataExtractor:
                     close_loss_rate=margin_quality_context['close_loss_rate'],
                     dominant_win_rate=margin_quality_context['dominant_win_rate'],
                     competitive_race_rate=margin_quality_context['competitive_race_rate'],
-                    blowout_loss_rate=margin_quality_context['blowout_loss_rate']
+                    blowout_loss_rate=margin_quality_context['blowout_loss_rate'],
+                    
+                    # Weight competitiveness features
+                    weight_relative_to_field=weight_competitiveness_context['weight_relative_to_field'],
+                    weight_percentile_in_race=weight_competitiveness_context['weight_percentile_in_race'],
+                    weight_advantage=weight_competitiveness_context['weight_advantage'],
+                    weight_per_rating=weight_competitiveness_context['weight_per_rating'],
+                    top_weight_burden=weight_competitiveness_context['top_weight_burden']
                 )
                 
                 records.append(record)
@@ -880,6 +899,65 @@ class BayesianTrainingDataExtractor:
             'early_to_late_pattern': early_to_late
         }
     
+    def _calculate_weight_competitiveness_features(self, target_race_entries: List[Dict], current_horse_weight: float, 
+                                                 current_horse_rating: Optional[float]) -> Dict:
+        """Calculate weight competitiveness features relative to the race field."""
+        
+        # Extract weights from all horses in the target race
+        field_weights = []
+        for entry in target_race_entries:
+            try:
+                weight = entry.get('weight')
+                if weight is not None:
+                    weight_float = float(weight)
+                    if weight_float > 0:
+                        field_weights.append(weight_float)
+            except (ValueError, TypeError):
+                continue
+        
+        if len(field_weights) < 2:
+            # Can't calculate relative features without field data
+            return {
+                'weight_relative_to_field': 0.0,
+                'weight_percentile_in_race': 0.5,
+                'weight_advantage': 0.0,
+                'weight_per_rating': 1.0,
+                'top_weight_burden': 0.0
+            }
+        
+        field_weights = np.array(field_weights)
+        
+        # Calculate relative positioning metrics
+        field_mean = np.mean(field_weights)
+        field_std = np.std(field_weights) if len(field_weights) > 1 else 1.0
+        field_min = np.min(field_weights)
+        field_max = np.max(field_weights)
+        field_range = field_max - field_min if field_max > field_min else 1.0
+        
+        # Weight relative to field (standardized)
+        weight_relative_to_field = (current_horse_weight - field_mean) / field_std if field_std > 0 else 0.0
+        
+        # Weight percentile within race field (0 = lightest, 1 = heaviest)
+        weights_less_than_current = np.sum(field_weights < current_horse_weight)
+        weight_percentile = weights_less_than_current / len(field_weights) if len(field_weights) > 0 else 0.5
+        
+        # Weight advantage (positive = lighter than average, negative = heavier)
+        weight_advantage = (field_mean - current_horse_weight) / field_range
+        
+        # Weight efficiency relative to rating
+        weight_per_rating = current_horse_weight / current_horse_rating if current_horse_rating and current_horse_rating > 0 else 1.0
+        
+        # Distance from top weight (burden of being heaviest)
+        top_weight_burden = (current_horse_weight - field_max) / field_range if field_range > 0 else 0.0
+        
+        return {
+            'weight_relative_to_field': weight_relative_to_field,
+            'weight_percentile_in_race': weight_percentile,
+            'weight_advantage': weight_advantage,
+            'weight_per_rating': weight_per_rating,
+            'top_weight_burden': top_weight_burden
+        }
+    
     def _calculate_career_context_at_race(self, sorted_races: List[Dict], current_race_idx: int, 
                                         current_race_date: datetime) -> Dict:
         """Calculate career statistics at the time of this historical race."""
@@ -1131,7 +1209,14 @@ class BayesianTrainingDataExtractor:
                     'close_loss_rate': record.close_loss_rate,
                     'dominant_win_rate': record.dominant_win_rate,
                     'competitive_race_rate': record.competitive_race_rate,
-                    'blowout_loss_rate': record.blowout_loss_rate
+                    'blowout_loss_rate': record.blowout_loss_rate,
+                    
+                    # Weight competitiveness features
+                    'weight_relative_to_field': record.weight_relative_to_field,
+                    'weight_percentile_in_race': record.weight_percentile_in_race,
+                    'weight_advantage': record.weight_advantage,
+                    'weight_per_rating': record.weight_per_rating,
+                    'top_weight_burden': record.top_weight_burden
                 }
                 data.append(record_dict)
             

@@ -632,7 +632,7 @@ def main():
                 'race_number': args.race_number,
                 'distance': race_details.get('distance', 1400),  # Actual distance
                 'track_condition': race_details.get('trackCondition', 'Good'),  # Actual condition
-                'class': race_details.get('raceClass', 'Unknown'),  # Actual class
+                'class': race_details.get('class') or race_details.get('rdcClass') or race_details.get('group') or 'Unknown',  # Actual class
                 'meet_code': meet_code,
                 'actual_race_number': actual_race_number
             }

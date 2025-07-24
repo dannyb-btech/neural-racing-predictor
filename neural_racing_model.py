@@ -373,6 +373,12 @@ class NeuralRacingModel:
             'close_loss_rate', 'dominant_win_rate', 'competitive_race_rate', 'blowout_loss_rate'
         ]
         
+        # Weight competitiveness features (relative field positioning)
+        weight_features = [
+            'weight_relative_to_field', 'weight_percentile_in_race', 'weight_advantage',
+            'weight_per_rating', 'top_weight_burden'
+        ]
+        
         # Horse profile features
         profile_features = [
             'overall_win_rate', 'overall_place_rate', 'avg_finish_position',
@@ -385,7 +391,7 @@ class NeuralRacingModel:
         
         # Combine all features that exist in the data
         selected_features = []
-        for feature_list in [core_features, context_features, venue_features, distance_features, condition_features, position_features, margin_features, profile_features, categorical_features]:
+        for feature_list in [core_features, context_features, venue_features, distance_features, condition_features, position_features, margin_features, weight_features, profile_features, categorical_features]:
             selected_features.extend([f for f in feature_list if f in data.columns])
         
         logger.info(f"Selected {len(selected_features)} features for training")
