@@ -658,43 +658,75 @@ class NeuralRacingModel:
             # Deterministic fallback if all probabilities are zero
             normalized_win_probs = np.ones(len(raw_win_probs)) / len(raw_win_probs)
         
-        # Deterministic place probabilities (based on win probability ranking)
+        # Use neural network place predictions with smart calibration
         place_probs = raw_place_probs.copy()
         
-        # Sort by win probability (deterministic)
-        sorted_indices = np.argsort(raw_win_probs)[::-1]  # Highest first
+        # Debug logging for place probability calibration
+        logger.info(f"Raw place probabilities: min={raw_place_probs.min():.3f}, max={raw_place_probs.max():.3f}, sum={raw_place_probs.sum():.3f}")
         
-        # Assign place probabilities deterministically based on ranking
-        for rank, idx in enumerate(sorted_indices):
-            if rank == 0:  # Best horse
-                place_probs[idx] = max(place_probs[idx], 0.7)
-            elif rank == 1:  # Second best
-                place_probs[idx] = max(place_probs[idx], 0.6) 
-            elif rank == 2:  # Third best
-                place_probs[idx] = max(place_probs[idx], 0.5)
-            elif rank < 6:  # Next 3 horses
-                place_probs[idx] = max(place_probs[idx], 0.3 - (rank - 3) * 0.05)
-            else:  # Rest
-                place_probs[idx] = max(place_probs[idx], 0.1)
+        # Apply reasonable bounds to prevent extreme values
+        place_probs = np.clip(place_probs, 0.01, 0.95)
         
-        # Cap and normalize deterministically
-        place_probs = np.minimum(place_probs, 0.9)
+        # Scale to approximately 3.0 total while preserving relative differences
         total_place_prob = place_probs.sum()
-        if total_place_prob > 3.2:
-            place_probs = place_probs * (3.0 / total_place_prob)
-        elif total_place_prob < 2.5:
-            place_probs = place_probs * (2.8 / total_place_prob)
+        if total_place_prob > 0:
+            # Target total of 3.0 (since 3 horses place)
+            target_total = 3.0
+            
+            # Use power scaling to preserve relative differences better than linear scaling
+            # Higher power = more aggressive scaling, lower power = more gentle
+            power_factor = 0.8
+            
+            # Apply power transformation to enhance differences
+            place_probs_powered = np.power(place_probs, power_factor)
+            
+            # Scale to target total
+            place_probs = place_probs_powered * (target_total / place_probs_powered.sum())
+            
+            # Final clipping to ensure reasonable bounds
+            place_probs = np.clip(place_probs, 0.05, 0.90)
+            
+            # Debug logging for calibrated probabilities
+            logger.info(f"Calibrated place probabilities: min={place_probs.min():.3f}, max={place_probs.max():.3f}, sum={place_probs.sum():.3f}")
+        else:
+            # Fallback if all probabilities are zero
+            place_probs = np.ones(len(raw_place_probs)) * (3.0 / len(raw_place_probs))
+            logger.warning("All raw place probabilities were zero - using uniform fallback")
         
-        # Create results with deterministic confidence calculation
+        # Create results with improved confidence calculation
         win_prob_std = np.std(raw_win_probs)
-        confidence_base = 1.0 - win_prob_std if win_prob_std < 1.0 else 0.1
+        place_prob_std = np.std(raw_place_probs)
+        
+        # Base confidence depends on overall field clarity
+        field_clarity = max(win_prob_std, place_prob_std)
+        base_confidence = min(0.95, max(0.50, field_clarity * 2.0))
+        
+        # Individual horse confidence based on how clear their position is
+        individual_confidence = []
+        sorted_win_probs = np.sort(normalized_win_probs)[::-1]  # Highest first
+        
+        for i, (win_prob, place_prob) in enumerate(zip(normalized_win_probs, place_probs)):
+            # Find where this horse ranks
+            rank = np.where(sorted_win_probs == win_prob)[0][0] + 1
+            
+            # Higher confidence for clear favorites and clear outsiders
+            if rank == 1 and win_prob > 0.15:  # Clear favorite
+                horse_confidence = base_confidence + 0.05
+            elif rank <= 3 and place_prob > 0.35:  # Strong place chance
+                horse_confidence = base_confidence
+            elif win_prob < 0.05:  # Clear outsider
+                horse_confidence = base_confidence - 0.05
+            else:  # Middle of the pack - lower confidence
+                horse_confidence = base_confidence - 0.10
+            
+            individual_confidence.append(max(0.30, min(0.95, horse_confidence)))
         
         results = pd.DataFrame({
             'horse_name': pred_data.get('horse_name', [f'Horse_{i}' for i in range(len(pred_data))]),
             'win_probability': normalized_win_probs,
             'place_probability': place_probs,
             'predicted_finish': predicted_finishes,
-            'confidence': confidence_base  # Same confidence for all horses
+            'confidence': individual_confidence
         })
         
         # Sort by win probability and add ranking
