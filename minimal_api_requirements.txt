@@ -1,0 +1,10 @@
+# Minimal API Dependencies for testing
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+azure-cosmos==4.3.1
+python-dotenv==1.0.1
+requests==2.32.3
+
+# Note: For full functionality, also install:
+# pandas, numpy, torch, scikit-learn from api_requirements.txt

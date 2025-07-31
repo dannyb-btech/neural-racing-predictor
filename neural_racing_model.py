@@ -51,7 +51,7 @@ class HorseRacingNet(nn.Module):
         for hidden_dim in hidden_dims:
             layers.extend([
                 nn.Linear(prev_dim, hidden_dim),
-                nn.BatchNorm1d(hidden_dim),
+                nn.LayerNorm(hidden_dim),  # Changed from BatchNorm1d to LayerNorm
                 nn.ReLU(),
                 nn.Dropout(0.3)
             ])

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Racing Predictor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #1e3c72, #2a5298);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .prediction-form {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            border: 1px solid #e9ecef;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .btn-predict {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 100%;
+        }
+
+        .btn-predict:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-predict:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results {
+            display: none;
+        }
+
+        .race-info {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            border-left: 5px solid #2196f3;
+        }
+
+        .race-info h3 {
+            color: #1565c0;
+            margin-bottom: 10px;
+        }
+
+        .race-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .race-details div {
+            font-weight: 600;
+        }
+
+        .predictions-table {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .predictions-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .predictions-table th {
+            background: linear-gradient(45deg, #1e3c72, #2a5298);
+            color: white;
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .predictions-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .predictions-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .predictions-table tr:hover {
+            background: #e3f2fd;
+        }
+
+        .rank {
+            width: 60px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .rank-1 { color: #ffd700; }
+        .rank-2 { color: #c0c0c0; }
+        .rank-3 { color: #cd7f32; }
+
+        .probability {
+            font-weight: 600;
+        }
+
+        .win-prob { color: #4caf50; }
+        .place-prob { color: #2196f3; }
+
+        .confidence-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(45deg, #4caf50, #8bc34a);
+            transition: width 0.5s ease;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 5px solid #f44336;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .model-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .metric {
+            background: #f1f8e9;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #c8e6c9;
+        }
+
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #2e7d32;
+        }
+
+        .metric-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .race-details {
+                grid-template-columns: 1fr;
+            }
+            
+            .predictions-table {
+                font-size: 14px;
+            }
+            
+            .predictions-table th,
+            .predictions-table td {
+                padding: 8px 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏇 Neural Racing Predictor</h1>
+            <p>AI-Powered Horse Racing Predictions</p>
+        </div>
+
+        <div class="main-content">
+            <form class="prediction-form" id="predictionForm">
+                <h3 style="margin-bottom: 20px; color: #333;">Generate Race Prediction</h3>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="date">Race Date</label>
+                        <input type="date" id="date" name="date" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="venue">Venue</label>
+                        <input type="text" id="venue" name="venue" placeholder="e.g., Flemington" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="raceNumber">Race Number</label>
+                        <select id="raceNumber" name="raceNumber" required>
+                            <option value="">Select Race</option>
+                            <option value="1">Race 1</option>
+                            <option value="2">Race 2</option>
+                            <option value="3">Race 3</option>
+                            <option value="4">Race 4</option>
+                            <option value="5">Race 5</option>
+                            <option value="6">Race 6</option>
+                            <option value="7">Race 7</option>
+                            <option value="8">Race 8</option>
+                            <option value="9">Race 9</option>
+                            <option value="10">Race 10</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="useNeuralNetwork" name="useNeuralNetwork" style="margin-right: 8px;">
+                        Use Real Neural Network (takes 2-3 minutes)
+                    </label>
+                    <small style="display: block; margin-top: 4px; color: #666;">
+                        Unchecked = Quick test predictions | Checked = Real AI predictions with racing data
+                    </small>
+                </div>
+                
+                <button type="submit" class="btn-predict" id="predictBtn">
+                    Generate Prediction
+                </button>
+            </form>
+
+            <div class="error" id="errorMessage"></div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Generating neural network predictions...</p>
+                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">This may take up to 60 seconds</p>
+            </div>
+
+            <div class="results" id="results">
+                <div class="race-info" id="raceInfo">
+                    <h3>Race Information</h3>
+                    <div class="race-details" id="raceDetails"></div>
+                    
+                    <div class="model-metrics" id="modelMetrics"></div>
+                </div>
+
+                <div class="predictions-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="rank">Rank</th>
+                                <th>Horse</th>
+                                <th>Barrier</th>
+                                <th>Weight</th>
+                                <th>Jockey</th>
+                                <th>Win %</th>
+                                <th>Place %</th>
+                                <th>Expected Finish</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody id="predictionsBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set default date to today
+        document.getElementById('date').valueAsDate = new Date();
+
+        // API configuration
+        const API_BASE_URL = 'http://localhost:8000'; // Update for production
+
+        document.getElementById('predictionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const predictionData = {
+                date: formData.get('date'),
+                venue: formData.get('venue'),
+                race_number: parseInt(formData.get('raceNumber')),
+                use_neural_network: formData.get('useNeuralNetwork') === 'on'
+            };
+
+            await generatePrediction(predictionData);
+        });
+
+        async function generatePrediction(data) {
+            // Show loading state
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('predictBtn').disabled = true;
+            
+            if (data.use_neural_network) {
+                document.getElementById('predictBtn').textContent = 'Training Neural Network...';
+                document.querySelector('#loading p').textContent = 'Training neural network and generating predictions (2-3 minutes)...';
+            } else {
+                document.getElementById('predictBtn').textContent = 'Generating...';
+                document.querySelector('#loading p').textContent = 'Generating test prediction...';
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/predict`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to generate prediction');
+                }
+
+                const result = await response.json();
+                displayResults(result);
+
+            } catch (error) {
+                console.error('Prediction error:', error);
+                document.getElementById('errorMessage').textContent = error.message;
+                document.getElementById('errorMessage').style.display = 'block';
+            } finally {
+                // Hide loading state
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('predictBtn').disabled = false;
+                document.getElementById('predictBtn').textContent = 'Generate Prediction';
+            }
+        }
+
+        function displayResults(result) {
+            // Extract data from the response
+            const data = result.data || result;
+            
+            // Display race information
+            const raceDetails = document.getElementById('raceDetails');
+            raceDetails.innerHTML = `
+                <div><strong>Date:</strong> ${data.race_info.date}</div>
+                <div><strong>Venue:</strong> ${data.race_info.venue}</div>
+                <div><strong>Race:</strong> ${data.race_info.race_number}</div>
+                <div><strong>Distance:</strong> ${data.race_info.distance}m</div>
+                <div><strong>Track:</strong> ${data.race_info.track_condition}</div>
+                <div><strong>Class:</strong> ${data.race_info.class || 'N/A'}</div>
+            `;
+
+            // Display model metrics
+            const modelMetrics = document.getElementById('modelMetrics');
+            modelMetrics.innerHTML = `
+                <div class="metric">
+                    <div class="metric-value">${data.model_metrics.training_records}</div>
+                    <div class="metric-label">Training Records</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${data.model_metrics.field_size}</div>
+                    <div class="metric-label">Field Size</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${(data.model_metrics.win_auc * 100).toFixed(1)}%</div>
+                    <div class="metric-label">Win AUC</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${(data.model_metrics.place_auc * 100).toFixed(1)}%</div>
+                    <div class="metric-label">Place AUC</div>
+                </div>
+            `;
+
+            // Display predictions
+            const predictionsBody = document.getElementById('predictionsBody');
+            predictionsBody.innerHTML = '';
+
+            // Sort predictions by win probability (highest first)
+            const sortedPredictions = data.predictions.sort((a, b) => b.win_probability - a.win_probability);
+
+            sortedPredictions.forEach((prediction, index) => {
+                // Update rank based on win probability order
+                prediction.rank = index + 1;
+                const row = document.createElement('tr');
+                const rankClass = prediction.rank <= 3 ? `rank-${prediction.rank}` : '';
+                
+                row.innerHTML = `
+                    <td class="rank ${rankClass}">${prediction.rank}</td>
+                    <td><strong>${prediction.horse_name}</strong></td>
+                    <td>${prediction.barrier || 'N/A'}</td>
+                    <td>${prediction.weight || 'N/A'}kg</td>
+                    <td>${prediction.jockey || 'N/A'}</td>
+                    <td class="probability win-prob">${(prediction.win_probability * 100).toFixed(1)}%</td>
+                    <td class="probability place-prob">${(prediction.place_probability * 100).toFixed(1)}%</td>
+                    <td>${prediction.predicted_finish.toFixed(1)}</td>
+                    <td>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${prediction.confidence * 100}%"></div>
+                        </div>
+                        <small>${(prediction.confidence * 100).toFixed(0)}%</small>
+                    </td>
+                `;
+                
+                predictionsBody.appendChild(row);
+            });
+
+            // Show results
+            document.getElementById('results').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
