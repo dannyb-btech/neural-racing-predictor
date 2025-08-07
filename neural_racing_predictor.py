@@ -760,8 +760,9 @@ def main():
                 cosmos_client = CosmosDBClient()
                 
                 # Prepare document for Cosmos DB
+                prediction_id = f"neural_{args.date}_{args.venue.replace(' ', '_')}_race{args.race_number}_{timestamp}"
                 cosmos_document = {
-                    'id': f"neural_{args.date}_{args.venue.replace(' ', '_')}_race{args.race_number}_{timestamp}",
+                    'id': prediction_id,
                     'race_date': args.date,
                     'venue': args.venue,
                     'race_number': args.race_number,
@@ -771,9 +772,12 @@ def main():
                     **results_data  # Include all the existing results data
                 }
                 
-                # Store in Cosmos DB
-                stored_doc = cosmos_client.store_prediction(cosmos_document)
-                print(f"✅ Results stored in Cosmos DB with ID: {stored_doc['id']}")
+                # Store in Cosmos DB with separate prediction_id and prediction_data
+                success = cosmos_client.store_prediction(prediction_id, cosmos_document)
+                if success:
+                    print(f"✅ Results stored in Cosmos DB with ID: {prediction_id}")
+                else:
+                    print(f"❌ Failed to store results in Cosmos DB")
                 
             except Exception as e:
                 print(f"⚠️  Warning: Could not store results in Cosmos DB: {e}")
