@@ -31,6 +31,14 @@ from racing_com_api_client import RacingComAPIClient
 from feature_creation import BayesianTrainingDataExtractor, RaceTarget
 from neural_racing_model import NeuralRacingModel
 
+# Optional Cosmos DB import
+try:
+    from cosmos_db_client import CosmosDBClient
+    COSMOS_DB_AVAILABLE = True
+except ImportError:
+    COSMOS_DB_AVAILABLE = False
+    logger.warning("Cosmos DB client not available - predictions will only be saved locally")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -527,6 +535,10 @@ def main():
                        help='Hidden layer dimensions')
     parser.add_argument('--device', default='cpu', choices=['cpu', 'cuda'], help='Training device')
     parser.add_argument('--save-data', action='store_true', help='Save training data')
+    parser.add_argument('--store-cosmos', action='store_true', default=True, 
+                       help='Store results in Cosmos DB (default: True)')
+    parser.add_argument('--no-cosmos', action='store_true',
+                       help='Disable Cosmos DB storage')
     
     args = parser.parse_args()
     
@@ -740,9 +752,44 @@ def main():
         with open(results_path, 'w') as f:
             json.dump(results_data, f, indent=2, default=str)
         
+        # Store results in Cosmos DB (if enabled and available)
+        store_in_cosmos = (args.store_cosmos and not args.no_cosmos and COSMOS_DB_AVAILABLE)
+        
+        if store_in_cosmos:
+            try:
+                cosmos_client = CosmosDBClient()
+                
+                # Prepare document for Cosmos DB
+                cosmos_document = {
+                    'id': f"neural_{args.date}_{args.venue.replace(' ', '_')}_race{args.race_number}_{timestamp}",
+                    'race_date': args.date,
+                    'venue': args.venue,
+                    'race_number': args.race_number,
+                    'prediction_type': 'neural_network',
+                    'created_at': datetime.now().isoformat(),
+                    'model_type': 'neural_racing_predictor',
+                    **results_data  # Include all the existing results data
+                }
+                
+                # Store in Cosmos DB
+                stored_doc = cosmos_client.store_prediction(cosmos_document)
+                print(f"✅ Results stored in Cosmos DB with ID: {stored_doc['id']}")
+                
+            except Exception as e:
+                print(f"⚠️  Warning: Could not store results in Cosmos DB: {e}")
+                logger.warning(f"Cosmos DB storage failed: {e}")
+        elif args.no_cosmos:
+            print("ℹ️  Cosmos DB storage disabled by --no-cosmos flag")
+        elif not COSMOS_DB_AVAILABLE:
+            print("ℹ️  Cosmos DB not available - install cosmos_db_client.py for cloud storage")
+        
         print(f"✅ Results saved:")
         print(f"  Predictions: {pred_path}")
         print(f"  Detailed results: {results_path}")
+        if store_in_cosmos:
+            print(f"  Cosmos DB: ✅ Stored with neural network prediction data")
+        else:
+            print(f"  Cosmos DB: ❌ Not stored (disabled or unavailable)")
         
         # Final summary
         print(f"\n🏆 PREDICTION SUMMARY")
