@@ -1,0 +1,11 @@
+azure-functions
+azure-cosmos
+python-dotenv
+requests
+pandas
+numpy
+torch
+scikit-learn
+fastapi
+pydantic
+uvicorn

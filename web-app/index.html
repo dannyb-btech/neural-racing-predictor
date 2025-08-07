@@ -310,6 +310,69 @@
             color: #7b1fa2;
         }
 
+        .expand-button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .expand-button:hover {
+            background: #218838;
+        }
+
+        .expand-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .collapsed-rows {
+            display: none;
+        }
+
+        .race-header {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .race-header:hover {
+            background-color: #f8f9fa;
+        }
+
+        .prediction-strength {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .strength-good {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .strength-moderate {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .strength-poor {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .strength-unknown {
+            background: #f5f5f5;
+            color: #666666;
+        }
+
         .metric-value {
             font-size: 1.8em;
             font-weight: bold;
@@ -350,14 +413,14 @@
             
             <!-- Tab Navigation -->
             <div class="tabs">
-                <button class="tab-button active" onclick="switchTab('generate')">Generate New</button>
-                <button class="tab-button" onclick="switchTab('search')">Search Existing</button>
+                <button class="tab-button" onclick="switchTab('generate')">Generate New</button>
+                <button class="tab-button active" onclick="switchTab('search')">Search Existing</button>
             </div>
         </div>
 
         <div class="main-content">
             <!-- Generate Prediction Tab -->
-            <div id="generateTab" class="tab-content active">
+            <div id="generateTab" class="tab-content">
             <form class="prediction-form" id="predictionForm">
                 <h3 style="margin-bottom: 20px; color: #333;">Generate Race Prediction</h3>
                 
@@ -444,7 +507,7 @@
             </div>
             
             <!-- Search Predictions Tab -->
-            <div id="searchTab" class="tab-content">
+            <div id="searchTab" class="tab-content active">
                 <div class="search-section">
                     <h3 style="margin-bottom: 20px; color: #333;">Search Existing Predictions</h3>
                     
@@ -475,6 +538,12 @@
                 </div>
                 
                 <div class="results" id="searchResults">
+                    <div id="venueFilterSection" style="display: none; margin-bottom: 20px;">
+                        <label for="venueFilter" style="display: block; margin-bottom: 8px; font-weight: 600;">Filter by Venue:</label>
+                        <select id="venueFilter" onchange="filterByVenue()" style="padding: 8px; border: 2px solid #e1e5e9; border-radius: 8px; font-size: 16px; width: 250px;">
+                            <option value="">All Venues</option>
+                        </select>
+                    </div>
                     <div id="searchResultsList"></div>
                 </div>
             </div>
@@ -486,7 +555,7 @@
         document.getElementById('date').valueAsDate = new Date();
 
         // API configuration
-        const API_BASE_URL = 'http://localhost:8000'; // Update for production
+        const API_BASE_URL = '/api'; // Azure Static Web Apps automatically routes /api to Functions
         
         // Tab switching functionality
         function switchTab(tabName) {
@@ -582,6 +651,15 @@
 
             // Display model metrics
             const modelMetrics = document.getElementById('modelMetrics');
+            const winAuc = data.model_metrics.win_auc || data.model_metrics.val_win_auc || 0;
+            let strengthDisplay = '';
+            if (winAuc !== undefined && !isNaN(winAuc) && winAuc > 0) {
+                const strength = getPredictionStrength(winAuc);
+                strengthDisplay = `<div class="prediction-strength ${strength.class}">${strength.icon} ${strength.level} Predictive Power</div>`;
+            } else {
+                strengthDisplay = `<div class="prediction-strength strength-unknown">ℹ️ Unable to Assess Predictive Power</div>`;
+            }
+            
             modelMetrics.innerHTML = `
                 <div class="metric">
                     <div class="metric-value">${data.model_metrics.training_records}</div>
@@ -592,12 +670,16 @@
                     <div class="metric-label">Field Size</div>
                 </div>
                 <div class="metric">
-                    <div class="metric-value">${(data.model_metrics.win_auc * 100).toFixed(1)}%</div>
+                    <div class="metric-value">${(winAuc * 100).toFixed(1)}%</div>
                     <div class="metric-label">Win AUC</div>
                 </div>
                 <div class="metric">
-                    <div class="metric-value">${(data.model_metrics.place_auc * 100).toFixed(1)}%</div>
+                    <div class="metric-value">${((data.model_metrics.place_auc || data.model_metrics.val_place_auc || 0) * 100).toFixed(1)}%</div>
                     <div class="metric-label">Place AUC</div>
+                </div>
+                <div class="metric" style="grid-column: span 2;">
+                    ${strengthDisplay}
+                    <div class="metric-label">Model Assessment</div>
                 </div>
             `;
 
@@ -614,9 +696,10 @@
                 const row = document.createElement('tr');
                 const rankClass = prediction.rank <= 3 ? `rank-${prediction.rank}` : '';
                 
+                const horseNumber = prediction.saddlecloth_number || 'N/A';
                 row.innerHTML = `
                     <td class="rank ${rankClass}">${prediction.rank}</td>
-                    <td><strong>${prediction.horse_name}</strong></td>
+                    <td><strong>${horseNumber}. ${prediction.horse_name}</strong></td>
                     <td>${prediction.barrier || 'N/A'}</td>
                     <td>${prediction.weight || 'N/A'}kg</td>
                     <td>${prediction.jockey || 'N/A'}</td>
@@ -689,45 +772,156 @@
             }
         }
         
+        function getPredictionStrength(valWinAuc) {
+            if (valWinAuc > 0.65) {
+                return {
+                    level: 'Good',
+                    class: 'strength-good',
+                    icon: '✅',
+                    color: '#4caf50'
+                };
+            } else if (valWinAuc > 0.55) {
+                return {
+                    level: 'Moderate', 
+                    class: 'strength-moderate',
+                    icon: '⚠️',
+                    color: '#ff9800'
+                };
+            } else {
+                return {
+                    level: 'Poor',
+                    class: 'strength-poor', 
+                    icon: '❌',
+                    color: '#f44336'
+                };
+            }
+        }
+        
+        function toggleRaceExpansion(raceId) {
+            const remainingRows = document.querySelectorAll(`#${raceId}-remaining`);
+            const button = document.getElementById(`${raceId}-btn`);
+            const toggleIcon = document.getElementById(`${raceId}-toggle`);
+            
+            if (remainingRows.length === 0) return;
+            
+            const isCurrentlyHidden = remainingRows[0].style.display === 'none';
+            
+            remainingRows.forEach(row => {
+                row.style.display = isCurrentlyHidden ? 'table-row' : 'none';
+            });
+            
+            if (button) {
+                const totalHorses = remainingRows.length + 5; // +5 for top 5 always shown
+                button.textContent = isCurrentlyHidden 
+                    ? `Show Top 5 Only ▲` 
+                    : `Show All ${totalHorses} Horses ▼`;
+            }
+            
+            if (toggleIcon) {
+                toggleIcon.textContent = isCurrentlyHidden ? '▲' : '▼';
+            }
+        }
+        
+        // Global variable to store all predictions for filtering
+        let allPredictions = [];
+        let selectedVenue = '';
+        
         function displaySearchResults(predictions) {
             const resultsList = document.getElementById('searchResultsList');
+            const venueFilterSection = document.getElementById('venueFilterSection');
+            const venueFilter = document.getElementById('venueFilter');
             
             if (!predictions || predictions.length === 0) {
                 resultsList.innerHTML = '<div class="error">No predictions found for your search criteria.</div>';
+                venueFilterSection.style.display = 'none';
                 document.getElementById('searchResults').style.display = 'block';
                 return;
             }
             
-            let html = '<h3>Found ' + predictions.length + ' prediction(s)</h3>';
+            // Store all predictions globally for filtering
+            allPredictions = predictions;
             
-            predictions.forEach(prediction => {
-                const isNeuralPredictor = prediction.model_type === 'neural_racing_predictor';
+            // Get unique venues
+            const venues = [...new Set(predictions.map(p => p.race_info?.venue || p.venue).filter(v => v))];
+            
+            // Populate venue filter dropdown
+            venueFilter.innerHTML = '<option value="">All Venues</option>';
+            venues.forEach(venue => {
+                venueFilter.innerHTML += `<option value="${venue}">${venue}</option>`;
+            });
+            
+            // Show venue filter if there are multiple venues
+            if (venues.length > 1) {
+                venueFilterSection.style.display = 'block';
+            } else {
+                venueFilterSection.style.display = 'none';
+            }
+            
+            // Display filtered results
+            displayFilteredResults(predictions);
+        }
+        
+        function filterByVenue() {
+            const venueFilter = document.getElementById('venueFilter');
+            selectedVenue = venueFilter.value;
+            
+            let filteredPredictions = allPredictions;
+            if (selectedVenue) {
+                filteredPredictions = allPredictions.filter(p => 
+                    (p.race_info?.venue || p.venue) === selectedVenue
+                );
+            }
+            
+            displayFilteredResults(filteredPredictions);
+        }
+        
+        function displayFilteredResults(predictions) {
+            const resultsList = document.getElementById('searchResultsList');
+            
+            let html = '<h3>Found ' + predictions.length + ' prediction(s)';
+            if (selectedVenue) {
+                html += ` at ${selectedVenue}`;
+            }
+            html += '</h3>';
+            
+            predictions.forEach((prediction, predictionIndex) => {
+                const isNeuralPredictor = prediction.model_type === 'neural_racing_predictor' || 
+                                         (prediction.model_metrics && (
+                                             prediction.model_metrics.val_win_auc !== undefined || 
+                                             prediction.model_metrics.train_win_auc !== undefined ||
+                                             prediction.model_metrics.training_samples !== undefined
+                                         ));
                 const sourceClass = isNeuralPredictor ? 'source-neural' : 'source-api';
                 const sourceName = isNeuralPredictor ? 'Neural Predictor' : 'API Prediction';
+                const raceId = `race-${predictionIndex}`;
+                const totalHorses = prediction.predictions ? prediction.predictions.length : 0;
+                
+                // Get prediction strength for neural predictor results
+                let strengthDisplay = '';
+                if (isNeuralPredictor && prediction.model_metrics) {
+                    const valWinAuc = prediction.model_metrics.val_win_auc;
+                    if (valWinAuc !== undefined && !isNaN(valWinAuc)) {
+                        const strength = getPredictionStrength(valWinAuc);
+                        strengthDisplay = `<div class="prediction-strength ${strength.class}">${strength.icon} ${strength.level} Predictive Power</div>`;
+                    } else {
+                        // Handle NaN or undefined AUC values
+                        strengthDisplay = `<div class="prediction-strength strength-unknown">ℹ️ Unable to Assess Predictive Power</div>`;
+                    }
+                }
                 
                 html += `
                     <div class="prediction-result" style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
                         <div class="prediction-source ${sourceClass}">${sourceName}</div>
-                        <h4>${prediction.race_info?.venue || prediction.venue} Race ${prediction.race_info?.race_number || prediction.race_number}</h4>
+                        ${strengthDisplay}
+                        <div class="race-header" ${totalHorses > 5 ? `onclick="toggleRaceExpansion('${raceId}')" style="cursor: pointer;"` : ''}>
+                            <h4>${prediction.race_info?.venue || prediction.venue} Race ${prediction.race_info?.race_number || prediction.race_number} 
+                                <span style="font-size: 0.8em; color: #666;">(${totalHorses} horses) 
+                                ${totalHorses > 5 ? `<span id="${raceId}-toggle">▼</span>` : ''}</span>
+                            </h4>
+                        </div>
                         <p><strong>Date:</strong> ${prediction.race_info?.date || prediction.race_date}</p>
                         <p><strong>Distance:</strong> ${prediction.race_info?.distance || 'Unknown'}m | <strong>Track:</strong> ${prediction.race_info?.track_condition || 'Unknown'}</p>
                         
-                        ${isNeuralPredictor && prediction.model_metrics ? `
-                        <div class="model-metrics">
-                            <div class="metric">
-                                <div class="metric-value">${(prediction.model_metrics.val_win_auc * 100).toFixed(1)}%</div>
-                                <div class="metric-label">Win AUC</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-value">${(prediction.model_metrics.val_place_auc * 100).toFixed(1)}%</div>
-                                <div class="metric-label">Place AUC</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-value">${prediction.model_metrics.training_samples}</div>
-                                <div class="metric-label">Training Samples</div>
-                            </div>
-                        </div>
-                        ` : ''}
                         
                         <div class="predictions-table" style="margin-top: 15px;">
                             <table>
@@ -747,12 +941,14 @@
                 // Sort predictions by win probability
                 const sortedPredictions = (prediction.predictions || []).sort((a, b) => b.win_probability - a.win_probability);
                 
-                sortedPredictions.slice(0, 5).forEach((horse, index) => { // Show top 5
+                // Show top 5 horses
+                sortedPredictions.slice(0, 5).forEach((horse, index) => {
                     const rankClass = (index + 1) <= 3 ? `rank-${index + 1}` : '';
+                    const horseNumber = horse.saddlecloth_number || 'N/A';
                     html += `
-                        <tr>
+                        <tr class="top-5-horse">
                             <td class="rank ${rankClass}">${index + 1}</td>
-                            <td><strong>${horse.horse_name}</strong></td>
+                            <td><strong>${horseNumber}. ${horse.horse_name}</strong></td>
                             <td class="probability win-prob">${(horse.win_probability * 100).toFixed(1)}%</td>
                             <td class="probability place-prob">${(horse.place_probability * 100).toFixed(1)}%</td>
                             <td>${horse.predicted_finish ? horse.predicted_finish.toFixed(1) : 'N/A'}</td>
@@ -761,10 +957,33 @@
                     `;
                 });
                 
+                // Show remaining horses (hidden by default)
+                if (sortedPredictions.length > 5) {
+                    sortedPredictions.slice(5).forEach((horse, index) => {
+                        const actualRank = index + 6;
+                        const horseNumber = horse.saddlecloth_number || 'N/A';
+                        html += `
+                            <tr class="remaining-horses" id="${raceId}-remaining" style="display: none;">
+                                <td class="rank">${actualRank}</td>
+                                <td><strong>${horseNumber}. ${horse.horse_name}</strong></td>
+                                <td class="probability win-prob">${(horse.win_probability * 100).toFixed(1)}%</td>
+                                <td class="probability place-prob">${(horse.place_probability * 100).toFixed(1)}%</td>
+                                <td>${horse.predicted_finish ? horse.predicted_finish.toFixed(1) : 'N/A'}</td>
+                                ${isNeuralPredictor ? `<td>${horse.confidence ? (horse.confidence * 100).toFixed(0) + '%' : 'N/A'}</td>` : ''}
+                            </tr>
+                        `;
+                    });
+                }
+                
                 html += `
                                 </tbody>
                             </table>
                         </div>
+                        ${totalHorses > 5 ? `
+                        <button class="expand-button" onclick="toggleRaceExpansion('${raceId}')" id="${raceId}-btn">
+                            Show All ${totalHorses} Horses ▼
+                        </button>
+                        ` : ''}
                         <small style="color: #666; margin-top: 10px; display: block;">
                             Created: ${new Date(prediction.created_at).toLocaleString()}
                         </small>

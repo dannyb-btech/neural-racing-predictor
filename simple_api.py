@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any, List
 import pandas as pd
 import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -194,6 +194,15 @@ def generate_neural_prediction(date: str, venue: str, race_number: int, api_key:
         
         print(f"✅ Generated predictions for {len(predictions_list)} horses")
         
+        # Determine prediction strength
+        val_win_auc = float(metrics.get('val_win_auc', metrics.get('win_auc', 0.0)))
+        if val_win_auc > 0.65:
+            strength_assessment = "Good"
+        elif val_win_auc > 0.55:
+            strength_assessment = "Moderate"
+        else:
+            strength_assessment = "Poor"
+        
         return {
             'race_info': race_info,
             'predictions': predictions_list,
@@ -202,8 +211,11 @@ def generate_neural_prediction(date: str, venue: str, race_number: int, api_key:
                 'field_size': len(target_horses),
                 'win_auc': float(metrics.get('win_auc', 0.0)),
                 'place_auc': float(metrics.get('place_auc', 0.0)),
+                'val_win_auc': val_win_auc,
+                'val_place_auc': float(metrics.get('val_place_auc', metrics.get('place_auc', 0.0))),
                 'win_loss': float(metrics.get('win_loss', 0.0)),
-                'place_loss': float(metrics.get('place_loss', 0.0))
+                'place_loss': float(metrics.get('place_loss', 0.0)),
+                'prediction_strength': strength_assessment
             },
             'created_at': datetime.now(timezone.utc).isoformat(),
             'note': 'Neural network prediction using historical racing data'
@@ -372,7 +384,7 @@ async def search_predictions(date: Optional[str] = None, venue: Optional[str] = 
     if not cosmos_client:
         raise HTTPException(status_code=500, detail="Cosmos DB not initialized")
     
-    predictions = cosmos_client.search_predictions(date=date, venue=venue, limit=10)
+    predictions = cosmos_client.search_predictions(date=date, venue=venue, limit=100)
     return {
         'predictions': predictions,
         'total': len(predictions)
