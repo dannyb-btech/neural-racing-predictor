@@ -463,8 +463,11 @@
     </div>
 
     <script>
-        // Set default date to today
-        document.getElementById('date').valueAsDate = new Date();
+        // Set default date to today for search form
+        const searchDate = document.getElementById('searchDate');
+        if (searchDate) {
+            searchDate.valueAsDate = new Date();
+        }
 
         // API configuration
         const API_BASE_URL = '/api'; // Azure Static Web Apps automatically routes /api to Functions
@@ -488,150 +491,7 @@
             event.target.classList.add('active');
         }
 
-        document.getElementById('predictionForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(e.target);
-            const predictionData = {
-                date: formData.get('date'),
-                venue: formData.get('venue'),
-                race_number: parseInt(formData.get('raceNumber')),
-                use_neural_network: formData.get('useNeuralNetwork') === 'on'
-            };
 
-            await generatePrediction(predictionData);
-        });
-
-        async function generatePrediction(data) {
-            // Show loading state
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            document.getElementById('errorMessage').style.display = 'none';
-            document.getElementById('predictBtn').disabled = true;
-            
-            if (data.use_neural_network) {
-                document.getElementById('predictBtn').textContent = 'Training Neural Network...';
-                document.querySelector('#loading p').textContent = 'Training neural network and generating predictions (2-3 minutes)...';
-            } else {
-                document.getElementById('predictBtn').textContent = 'Generating...';
-                document.querySelector('#loading p').textContent = 'Generating test prediction...';
-            }
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/predict`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Failed to generate prediction');
-                }
-
-                const result = await response.json();
-                displayResults(result);
-
-            } catch (error) {
-                console.error('Prediction error:', error);
-                document.getElementById('errorMessage').textContent = error.message;
-                document.getElementById('errorMessage').style.display = 'block';
-            } finally {
-                // Hide loading state
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('predictBtn').disabled = false;
-                document.getElementById('predictBtn').textContent = 'Generate Prediction';
-            }
-        }
-
-        function displayResults(result) {
-            // Extract data from the response
-            const data = result.data || result;
-            
-            // Display race information
-            const raceDetails = document.getElementById('raceDetails');
-            raceDetails.innerHTML = `
-                <div><strong>Date:</strong> ${data.race_info.date}</div>
-                <div><strong>Venue:</strong> ${data.race_info.venue}</div>
-                <div><strong>Race:</strong> ${data.race_info.race_number}</div>
-                <div><strong>Distance:</strong> ${data.race_info.distance}m</div>
-                <div><strong>Track:</strong> ${data.race_info.track_condition}</div>
-                <div><strong>Class:</strong> ${data.race_info.class || 'N/A'}</div>
-            `;
-
-            // Display model metrics
-            const modelMetrics = document.getElementById('modelMetrics');
-            const winAuc = data.model_metrics.win_auc || data.model_metrics.val_win_auc || 0;
-            let strengthDisplay = '';
-            if (winAuc !== undefined && !isNaN(winAuc) && winAuc > 0) {
-                const strength = getPredictionStrength(winAuc);
-                strengthDisplay = `<div class="prediction-strength ${strength.class}">${strength.icon} ${strength.level} Predictive Power</div>`;
-            } else {
-                strengthDisplay = `<div class="prediction-strength strength-unknown">ℹ️ Unable to Assess Predictive Power</div>`;
-            }
-            
-            modelMetrics.innerHTML = `
-                <div class="metric">
-                    <div class="metric-value">${data.model_metrics.training_records}</div>
-                    <div class="metric-label">Training Records</div>
-                </div>
-                <div class="metric">
-                    <div class="metric-value">${data.model_metrics.field_size}</div>
-                    <div class="metric-label">Field Size</div>
-                </div>
-                <div class="metric">
-                    <div class="metric-value">${(winAuc * 100).toFixed(1)}%</div>
-                    <div class="metric-label">Win AUC</div>
-                </div>
-                <div class="metric">
-                    <div class="metric-value">${((data.model_metrics.place_auc || data.model_metrics.val_place_auc || 0) * 100).toFixed(1)}%</div>
-                    <div class="metric-label">Place AUC</div>
-                </div>
-                <div class="metric" style="grid-column: span 2;">
-                    ${strengthDisplay}
-                    <div class="metric-label">Model Assessment</div>
-                </div>
-            `;
-
-            // Display predictions
-            const predictionsBody = document.getElementById('predictionsBody');
-            predictionsBody.innerHTML = '';
-
-            // Sort predictions by win probability (highest first)
-            const sortedPredictions = data.predictions.sort((a, b) => b.win_probability - a.win_probability);
-
-            sortedPredictions.forEach((prediction, index) => {
-                // Update rank based on win probability order
-                prediction.rank = index + 1;
-                const row = document.createElement('tr');
-                const rankClass = prediction.rank <= 3 ? `rank-${prediction.rank}` : '';
-                
-                const horseNumber = prediction.saddlecloth_number || 'N/A';
-                row.innerHTML = `
-                    <td class="rank ${rankClass}">${prediction.rank}</td>
-                    <td><strong>${horseNumber}. ${prediction.horse_name}</strong></td>
-                    <td>${prediction.barrier || 'N/A'}</td>
-                    <td>${prediction.weight || 'N/A'}kg</td>
-                    <td>${prediction.jockey || 'N/A'}</td>
-                    <td class="probability win-prob">${(prediction.win_probability * 100).toFixed(1)}%</td>
-                    <td class="probability place-prob">${(prediction.place_probability * 100).toFixed(1)}%</td>
-                    <td>${prediction.predicted_finish.toFixed(1)}</td>
-                    <td>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" style="width: ${prediction.confidence * 100}%"></div>
-                        </div>
-                        <small>${(prediction.confidence * 100).toFixed(0)}%</small>
-                    </td>
-                `;
-                
-                predictionsBody.appendChild(row);
-            });
-
-            // Show results
-            document.getElementById('results').style.display = 'block';
-        }
         
         // Search form functionality
         document.getElementById('searchForm').addEventListener('submit', async function(e) {
