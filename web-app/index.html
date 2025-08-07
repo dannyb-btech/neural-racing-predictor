@@ -247,6 +247,69 @@
             border: 1px solid #c8e6c9;
         }
 
+        /* Tab Styles */
+        .tabs {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        .tab-button {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button:hover {
+            background: #e9ecef;
+        }
+
+        .tab-button.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .search-section {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .prediction-source {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .source-api {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .source-neural {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
         .metric-value {
             font-size: 1.8em;
             font-weight: bold;
@@ -284,9 +347,17 @@
         <div class="header">
             <h1>🏇 Neural Racing Predictor</h1>
             <p>AI-Powered Horse Racing Predictions</p>
+            
+            <!-- Tab Navigation -->
+            <div class="tabs">
+                <button class="tab-button active" onclick="switchTab('generate')">Generate New</button>
+                <button class="tab-button" onclick="switchTab('search')">Search Existing</button>
+            </div>
         </div>
 
         <div class="main-content">
+            <!-- Generate Prediction Tab -->
+            <div id="generateTab" class="tab-content active">
             <form class="prediction-form" id="predictionForm">
                 <h3 style="margin-bottom: 20px; color: #333;">Generate Race Prediction</h3>
                 
@@ -370,6 +441,43 @@
                     </table>
                 </div>
             </div>
+            </div>
+            
+            <!-- Search Predictions Tab -->
+            <div id="searchTab" class="tab-content">
+                <div class="search-section">
+                    <h3 style="margin-bottom: 20px; color: #333;">Search Existing Predictions</h3>
+                    
+                    <form class="prediction-form" id="searchForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="searchDate">Date (Optional)</label>
+                                <input type="date" id="searchDate" name="searchDate">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="searchVenue">Venue (Optional)</label>
+                                <input type="text" id="searchVenue" name="searchVenue" placeholder="e.g., Flemington">
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn-predict" id="searchBtn">
+                            Search Predictions
+                        </button>
+                    </form>
+                </div>
+                
+                <div class="error" id="searchErrorMessage"></div>
+                
+                <div class="loading" id="searchLoading">
+                    <div class="spinner"></div>
+                    <p>Searching predictions...</p>
+                </div>
+                
+                <div class="results" id="searchResults">
+                    <div id="searchResultsList"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -379,6 +487,25 @@
 
         // API configuration
         const API_BASE_URL = 'http://localhost:8000'; // Update for production
+        
+        // Tab switching functionality
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName + 'Tab').classList.add('active');
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
 
         document.getElementById('predictionForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -509,6 +636,144 @@
 
             // Show results
             document.getElementById('results').style.display = 'block';
+        }
+        
+        // Search form functionality
+        document.getElementById('searchForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const searchData = {
+                date: formData.get('searchDate'),
+                venue: formData.get('searchVenue')
+            };
+            
+            await searchPredictions(searchData);
+        });
+        
+        async function searchPredictions(data) {
+            // Show loading state
+            document.getElementById('searchLoading').style.display = 'block';
+            document.getElementById('searchResults').style.display = 'none';
+            document.getElementById('searchErrorMessage').style.display = 'none';
+            document.getElementById('searchBtn').disabled = true;
+            
+            try {
+                // Build query parameters
+                const params = new URLSearchParams();
+                if (data.date) params.append('date', data.date);
+                if (data.venue) params.append('venue', data.venue);
+                
+                const response = await fetch(`${API_BASE_URL}/predictions/search?${params}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to search predictions');
+                }
+                
+                const result = await response.json();
+                displaySearchResults(result.predictions);
+                
+            } catch (error) {
+                console.error('Search error:', error);
+                document.getElementById('searchErrorMessage').textContent = error.message;
+                document.getElementById('searchErrorMessage').style.display = 'block';
+            } finally {
+                document.getElementById('searchLoading').style.display = 'none';
+                document.getElementById('searchBtn').disabled = false;
+            }
+        }
+        
+        function displaySearchResults(predictions) {
+            const resultsList = document.getElementById('searchResultsList');
+            
+            if (!predictions || predictions.length === 0) {
+                resultsList.innerHTML = '<div class="error">No predictions found for your search criteria.</div>';
+                document.getElementById('searchResults').style.display = 'block';
+                return;
+            }
+            
+            let html = '<h3>Found ' + predictions.length + ' prediction(s)</h3>';
+            
+            predictions.forEach(prediction => {
+                const isNeuralPredictor = prediction.model_type === 'neural_racing_predictor';
+                const sourceClass = isNeuralPredictor ? 'source-neural' : 'source-api';
+                const sourceName = isNeuralPredictor ? 'Neural Predictor' : 'API Prediction';
+                
+                html += `
+                    <div class="prediction-result" style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <div class="prediction-source ${sourceClass}">${sourceName}</div>
+                        <h4>${prediction.race_info?.venue || prediction.venue} Race ${prediction.race_info?.race_number || prediction.race_number}</h4>
+                        <p><strong>Date:</strong> ${prediction.race_info?.date || prediction.race_date}</p>
+                        <p><strong>Distance:</strong> ${prediction.race_info?.distance || 'Unknown'}m | <strong>Track:</strong> ${prediction.race_info?.track_condition || 'Unknown'}</p>
+                        
+                        ${isNeuralPredictor && prediction.model_metrics ? `
+                        <div class="model-metrics">
+                            <div class="metric">
+                                <div class="metric-value">${(prediction.model_metrics.val_win_auc * 100).toFixed(1)}%</div>
+                                <div class="metric-label">Win AUC</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value">${(prediction.model_metrics.val_place_auc * 100).toFixed(1)}%</div>
+                                <div class="metric-label">Place AUC</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value">${prediction.model_metrics.training_samples}</div>
+                                <div class="metric-label">Training Samples</div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="predictions-table" style="margin-top: 15px;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Horse</th>
+                                        <th>Win %</th>
+                                        <th>Place %</th>
+                                        <th>Expected Finish</th>
+                                        ${isNeuralPredictor ? '<th>Confidence</th>' : ''}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                // Sort predictions by win probability
+                const sortedPredictions = (prediction.predictions || []).sort((a, b) => b.win_probability - a.win_probability);
+                
+                sortedPredictions.slice(0, 5).forEach((horse, index) => { // Show top 5
+                    const rankClass = (index + 1) <= 3 ? `rank-${index + 1}` : '';
+                    html += `
+                        <tr>
+                            <td class="rank ${rankClass}">${index + 1}</td>
+                            <td><strong>${horse.horse_name}</strong></td>
+                            <td class="probability win-prob">${(horse.win_probability * 100).toFixed(1)}%</td>
+                            <td class="probability place-prob">${(horse.place_probability * 100).toFixed(1)}%</td>
+                            <td>${horse.predicted_finish ? horse.predicted_finish.toFixed(1) : 'N/A'}</td>
+                            ${isNeuralPredictor ? `<td>${horse.confidence ? (horse.confidence * 100).toFixed(0) + '%' : 'N/A'}</td>` : ''}
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                                </tbody>
+                            </table>
+                        </div>
+                        <small style="color: #666; margin-top: 10px; display: block;">
+                            Created: ${new Date(prediction.created_at).toLocaleString()}
+                        </small>
+                    </div>
+                `;
+            });
+            
+            resultsList.innerHTML = html;
+            document.getElementById('searchResults').style.display = 'block';
         }
     </script>
 </body>
