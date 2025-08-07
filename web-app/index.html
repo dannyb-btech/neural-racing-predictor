@@ -413,99 +413,11 @@
             
             <!-- Tab Navigation -->
             <div class="tabs">
-                <button class="tab-button" onclick="switchTab('generate')">Generate New</button>
-                <button class="tab-button active" onclick="switchTab('search')">Search Existing</button>
+                <button class="tab-button active" onclick="switchTab('search')">View Predictions</button>
             </div>
         </div>
 
         <div class="main-content">
-            <!-- Generate Prediction Tab -->
-            <div id="generateTab" class="tab-content">
-            <form class="prediction-form" id="predictionForm">
-                <h3 style="margin-bottom: 20px; color: #333;">Generate Race Prediction</h3>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="date">Race Date</label>
-                        <input type="date" id="date" name="date" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="venue">Venue</label>
-                        <input type="text" id="venue" name="venue" placeholder="e.g., Flemington" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="raceNumber">Race Number</label>
-                        <select id="raceNumber" name="raceNumber" required>
-                            <option value="">Select Race</option>
-                            <option value="1">Race 1</option>
-                            <option value="2">Race 2</option>
-                            <option value="3">Race 3</option>
-                            <option value="4">Race 4</option>
-                            <option value="5">Race 5</option>
-                            <option value="6">Race 6</option>
-                            <option value="7">Race 7</option>
-                            <option value="8">Race 8</option>
-                            <option value="9">Race 9</option>
-                            <option value="10">Race 10</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="useNeuralNetwork" name="useNeuralNetwork" style="margin-right: 8px;">
-                        Use Real Neural Network (takes 2-3 minutes)
-                    </label>
-                    <small style="display: block; margin-top: 4px; color: #666;">
-                        Unchecked = Quick test predictions | Checked = Real AI predictions with racing data
-                    </small>
-                </div>
-                
-                <button type="submit" class="btn-predict" id="predictBtn">
-                    Generate Prediction
-                </button>
-            </form>
-
-            <div class="error" id="errorMessage"></div>
-
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>Generating neural network predictions...</p>
-                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">This may take up to 60 seconds</p>
-            </div>
-
-            <div class="results" id="results">
-                <div class="race-info" id="raceInfo">
-                    <h3>Race Information</h3>
-                    <div class="race-details" id="raceDetails"></div>
-                    
-                    <div class="model-metrics" id="modelMetrics"></div>
-                </div>
-
-                <div class="predictions-table">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th class="rank">Rank</th>
-                                <th>Horse</th>
-                                <th>Barrier</th>
-                                <th>Weight</th>
-                                <th>Jockey</th>
-                                <th>Win %</th>
-                                <th>Place %</th>
-                                <th>Expected Finish</th>
-                                <th>Confidence</th>
-                            </tr>
-                        </thead>
-                        <tbody id="predictionsBody">
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            </div>
-            
             <!-- Search Predictions Tab -->
             <div id="searchTab" class="tab-content active">
                 <div class="search-section">
