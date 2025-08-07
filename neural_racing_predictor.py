@@ -749,18 +749,16 @@ def main():
             }
         }
         
-        with open(results_path, 'w') as f:
-            json.dump(results_data, f, indent=2, default=str)
-        
-        # Store results in Cosmos DB (if enabled and available)
+# Store results in Cosmos DB (if enabled and available)
         store_in_cosmos = (args.store_cosmos and not args.no_cosmos and COSMOS_DB_AVAILABLE)
+        cosmos_success = False
+        prediction_id = f"neural_{args.date}_{args.venue.replace(' ', '_')}_race{args.race_number}_{timestamp}"
         
         if store_in_cosmos:
             try:
                 cosmos_client = CosmosDBClient()
                 
                 # Prepare document for Cosmos DB
-                prediction_id = f"neural_{args.date}_{args.venue.replace(' ', '_')}_race{args.race_number}_{timestamp}"
                 cosmos_document = {
                     'id': prediction_id,
                     'race_date': args.date,
@@ -773,8 +771,8 @@ def main():
                 }
                 
                 # Store in Cosmos DB with separate prediction_id and prediction_data
-                success = cosmos_client.store_prediction(prediction_id, cosmos_document)
-                if success:
+                cosmos_success = cosmos_client.store_prediction(prediction_id, cosmos_document)
+                if cosmos_success:
                     print(f"✅ Results stored in Cosmos DB with ID: {prediction_id}")
                 else:
                     print(f"❌ Failed to store results in Cosmos DB")
@@ -787,13 +785,32 @@ def main():
         elif not COSMOS_DB_AVAILABLE:
             print("ℹ️  Cosmos DB not available - install cosmos_db_client.py for cloud storage")
         
-        print(f"✅ Results saved:")
-        print(f"  Predictions: {pred_path}")
-        print(f"  Detailed results: {results_path}")
-        if store_in_cosmos:
-            print(f"  Cosmos DB: ✅ Stored with neural network prediction data")
+        # Only save local files if Cosmos DB storage failed or was not attempted
+        if not cosmos_success:
+            print(f"💾 Saving results locally...")
+            
+            # Save predictions CSV
+            predictions.to_csv(pred_path, index=False)
+            
+            # Save detailed results JSON
+            with open(results_path, 'w') as f:
+                json.dump(results_data, f, indent=2, default=str)
         else:
-            print(f"  Cosmos DB: ❌ Not stored (disabled or unavailable)")
+            print(f"ℹ️  Skipping local file storage - results stored in Cosmos DB")
+        
+        print(f"✅ Results saved:")
+        if not cosmos_success:
+            print(f"  Local CSV: {pred_path}")
+            print(f"  Local JSON: {results_path}")
+        else:
+            print(f"  Local files: ❌ Skipped (stored in Cosmos DB)")
+            
+        if cosmos_success:
+            print(f"  Cosmos DB: ✅ Stored with ID: {prediction_id}")
+        elif store_in_cosmos:
+            print(f"  Cosmos DB: ❌ Storage failed")
+        else:
+            print(f"  Cosmos DB: ❌ Not attempted (disabled or unavailable)")
         
         # Final summary
         print(f"\n🏆 PREDICTION SUMMARY")
