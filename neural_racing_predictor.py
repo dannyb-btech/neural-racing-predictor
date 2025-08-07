@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 # Suppress Cosmos DB logs to reduce noise
 logging.getLogger('cosmos_db_client').setLevel(logging.WARNING)
 logging.getLogger('azure.cosmos').setLevel(logging.WARNING)
+logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
 
 def print_race_summary(race_info: dict, horse_count: int):
     """Print summary of the upcoming race."""
