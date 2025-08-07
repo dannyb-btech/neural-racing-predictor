@@ -650,13 +650,28 @@
         function displayFilteredResults(predictions) {
             const resultsList = document.getElementById('searchResultsList');
             
+            // Sort predictions by venue, then race number ascending
+            const sortedPredictions = predictions.sort((a, b) => {
+                const venueA = (a.race_info?.venue || a.venue || '').toLowerCase();
+                const venueB = (b.race_info?.venue || b.venue || '').toLowerCase();
+                
+                if (venueA !== venueB) {
+                    return venueA.localeCompare(venueB);
+                }
+                
+                // Same venue, sort by race number
+                const raceA = a.race_info?.race_number || a.race_number || 0;
+                const raceB = b.race_info?.race_number || b.race_number || 0;
+                return raceA - raceB;
+            });
+            
             let html = '<h3>Found ' + predictions.length + ' prediction(s)';
             if (selectedVenue) {
                 html += ` at ${selectedVenue}`;
             }
             html += '</h3>';
             
-            predictions.forEach((prediction, predictionIndex) => {
+            sortedPredictions.forEach((prediction, predictionIndex) => {
                 const isNeuralPredictor = prediction.model_type === 'neural_racing_predictor' || 
                                          (prediction.model_metrics && (
                                              prediction.model_metrics.val_win_auc !== undefined || 
